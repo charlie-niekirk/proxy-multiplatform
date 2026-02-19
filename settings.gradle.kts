@@ -1,4 +1,4 @@
-rootProject.name = "proxy_multiplatform"
+rootProject.name = "proxy"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
@@ -33,3 +33,9 @@ plugins {
 }
 
 include(":composeApp")
+include(":core:model")
+include(":core:proxy")
+include(":core:rules")
+include(":core:storage")
+include(":core:tls")
+include(":feature:settings")

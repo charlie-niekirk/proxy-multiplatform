@@ -29,7 +29,7 @@ Build a **desktop-first** HTTP(S) proxying application inspired by Proxyman/Char
 
 Use Gradle nested modules to keep boundaries clear and future-proof:
 
-- `:app:desktop`
+- `:composeApp`
   - Compose desktop app entrypoint, DI bootstrap, navigation shell.
 - `:core:model`
   - Domain models (`Session`, `HttpRequest`, `HttpResponse`, `Rule`, `ProxySettings`, `CertificateState`).
