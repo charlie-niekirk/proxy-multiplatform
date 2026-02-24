@@ -15,7 +15,6 @@ zxing = "3.5.3"
 highlight = "2.3.0"
 coil = "3.3.0"
 ktor = "3.4.0"
-jsonTree = "2.6.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -54,7 +53,6 @@ coil-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "co
 
 ktor-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
-jsonTree-compose = { module = "com.sebastianneubauer.jsontree:jsontree", version.ref = "jsonTree" }
 
 [plugins]
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
