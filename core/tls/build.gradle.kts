@@ -26,6 +26,8 @@ kotlin {
             implementation(libs.dev.zacsweers.metrox.viewmodel)
             implementation(libs.dev.zacsweers.metrox.viewmodel.compose)
 
+            implementation(projects.core.model)
+            implementation(projects.core.storage)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -33,6 +35,8 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
+            implementation(libs.bouncycastle.bcprov)
+            implementation(libs.bouncycastle.bcpkix)
         }
     }
 }

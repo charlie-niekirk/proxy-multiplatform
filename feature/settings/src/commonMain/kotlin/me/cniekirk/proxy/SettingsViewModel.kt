@@ -14,7 +14,9 @@ import org.orbitmvi.orbit.viewmodel.container
 @ViewModelKey(SettingsViewModel::class)
 @ContributesIntoMap(scope = AppScope::class, binding = binding<ViewModel>())
 class SettingsViewModel(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val tlsService: TlsService,
+    private val certificateDistributionService: CertificateDistributionService,
 ) : ViewModel(), ContainerHost<SettingsState, Nothing> {
 
     override val container = container<SettingsState, Nothing>(SettingsState()) {
@@ -25,8 +27,22 @@ class SettingsViewModel(
         settingsRepository.settings
             .distinctUntilChanged()
             .collect { currentSettings ->
+                val onboardingUrls = runCatching {
+                    certificateDistributionService.getOnboardingUrls(
+                        proxyPort = currentSettings.proxy.port,
+                    )
+                }.getOrElse {
+                    CertificateOnboardingUrls(
+                        friendlyUrl = CertificateDistributionService.DEFAULT_CERTIFICATE_URL,
+                        fallbackUrl = null,
+                    )
+                }
+
                 reduce {
-                    state.copy(settings = currentSettings)
+                    state.copy(
+                        settings = currentSettings,
+                        onboardingUrls = onboardingUrls,
+                    )
                 }
             }
     }
@@ -36,6 +52,37 @@ class SettingsViewModel(
     }
 
     fun toggleSslDecryption(enabled: Boolean) = intent {
+        reduce {
+            state.copy(
+                isProvisioningCertificate = enabled,
+                sslToggleError = null,
+            )
+        }
+
+        if (enabled) {
+            val certificateProvisionResult = runCatching {
+                tlsService.ensureCertificateMaterial()
+            }
+
+            if (certificateProvisionResult.isFailure) {
+                reduce {
+                    state.copy(
+                        isProvisioningCertificate = false,
+                        sslToggleError = certificateProvisionResult.exceptionOrNull()?.message
+                            ?: "Failed to generate certificate material.",
+                    )
+                }
+                return@intent
+            }
+        }
+
         settingsRepository.updateProxySettings { it.copy(sslDecryptionEnabled = enabled) }
+
+        reduce {
+            state.copy(
+                isProvisioningCertificate = false,
+                sslToggleError = null,
+            )
+        }
     }
 }

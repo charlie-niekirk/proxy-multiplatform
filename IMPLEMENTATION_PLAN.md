@@ -215,7 +215,7 @@ Session persistence strategy:
 
 ### Milestone 1 — Foundation
 
-- Create nested modules (`:app:desktop`, `:core:*`, `:feature:*`).
+- Create Gradle modules (`:composeApp`, `:core:*`, `:feature:*`).
 - Setup Metro + Orbit + DataStore wiring.
 - Basic shell UI and settings persistence.
 

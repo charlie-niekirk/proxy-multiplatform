@@ -31,6 +31,7 @@ kotlin {
             implementation(projects.core.rules)
             implementation(projects.core.storage)
             implementation(projects.core.tls)
+            implementation(projects.feature.sessions)
             implementation(projects.feature.settings)
         }
         commonTest.dependencies {

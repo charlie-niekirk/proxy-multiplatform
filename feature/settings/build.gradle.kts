@@ -31,7 +31,9 @@ kotlin {
             implementation(libs.orbit.viewmodel)
 
             implementation(projects.core.model)
+            implementation(projects.core.proxy)
             implementation(projects.core.storage)
+            implementation(projects.core.tls)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -39,6 +41,7 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.swing)
+            implementation(libs.zxing.core)
         }
     }
 }
