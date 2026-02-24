@@ -1,5 +1,6 @@
 package me.cniekirk.proxy
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,20 +15,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,16 +34,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
-import com.sebastianneubauer.jsontree.JsonTree
 import com.neoutils.highlight.compose.extension.spanStyle
 import com.neoutils.highlight.compose.remember.rememberAnnotatedString
 import com.neoutils.highlight.compose.remember.rememberHighlight
@@ -60,7 +59,19 @@ private const val COLUMN_WEIGHT_TIME = 1.6f
 private const val COLUMN_WEIGHT_DURATION = 1.4f
 private const val COLUMN_WEIGHT_REQUEST_BYTES = 1.4f
 private const val COLUMN_WEIGHT_RESPONSE_BYTES = 1.4f
-private const val LOG_PREFIX = "[SessionsScreen]"
+private val SIDEBAR_WIDTH = 230.dp
+
+private data class DomainSummary(
+    val host: String,
+    val count: Int,
+)
+
+private data class UrlSegments(
+    val protocol: String?,
+    val host: String,
+    val path: String,
+    val suffix: String,
+)
 
 private enum class SessionDetailTab(val title: String) {
     Overview("Overview"),
@@ -71,7 +82,31 @@ private enum class SessionDetailTab(val title: String) {
 @Composable
 fun SessionsScreen(viewModel: SessionsViewModel) {
     val state by viewModel.collectAsState()
-    val selectedSession = state.sessions.firstOrNull { it.id == state.selectedSessionId }
+    val domainSummaries = remember(state.sessions) { buildDomainSummaries(state.sessions) }
+    var selectedDomain by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(domainSummaries, selectedDomain) {
+        if (selectedDomain != null && domainSummaries.none { summary -> summary.host == selectedDomain }) {
+            selectedDomain = null
+        }
+    }
+
+    val visibleSessions = remember(state.sessions, selectedDomain) {
+        if (selectedDomain == null) {
+            state.sessions
+        } else {
+            state.sessions.filter { session -> extractRequestHost(session.request.url) == selectedDomain }
+        }
+    }
+    val selectedSession = visibleSessions.firstOrNull { session -> session.id == state.selectedSessionId }
+        ?: visibleSessions.firstOrNull()
+
+    LaunchedEffect(selectedSession?.id, state.selectedSessionId) {
+        val selectedId = selectedSession?.id ?: return@LaunchedEffect
+        if (selectedId != state.selectedSessionId) {
+            viewModel.selectSession(selectedId)
+        }
+    }
 
     var requestTab by remember(selectedSession?.id) { mutableStateOf(SessionDetailTab.Overview) }
     var responseTab by remember(selectedSession?.id) { mutableStateOf(SessionDetailTab.Overview) }
@@ -79,8 +114,8 @@ fun SessionsScreen(viewModel: SessionsViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         SessionsToolbar(
             state = state,
@@ -88,45 +123,54 @@ fun SessionsScreen(viewModel: SessionsViewModel) {
         )
 
         state.runtimeError?.let { runtimeError ->
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                ),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Proxy runtime failed to start", fontWeight = FontWeight.SemiBold)
-                    Text(runtimeError)
-                    Button(onClick = viewModel::clearRuntimeError) {
-                        Text("Dismiss")
-                    }
-                }
-            }
+            RuntimeErrorBanner(
+                message = runtimeError,
+                onDismiss = viewModel::clearRuntimeError,
+            )
         }
 
-        RequestsTableCard(
-            sessions = state.sessions,
-            selectedSessionId = state.selectedSessionId,
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.44f),
-            onSelectSession = viewModel::selectSession,
-        )
+                .fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            DomainSidebar(
+                domains = domainSummaries,
+                selectedDomain = selectedDomain,
+                totalCount = state.sessions.size,
+                modifier = Modifier
+                    .width(SIDEBAR_WIDTH)
+                    .fillMaxHeight(),
+                onDomainSelected = { selectedDomain = it },
+            )
 
-        SessionInspector(
-            session = selectedSession,
-            requestTab = requestTab,
-            onRequestTabChange = { requestTab = it },
-            responseTab = responseTab,
-            onResponseTabChange = { responseTab = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.56f),
-        )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                RequestsTableCard(
+                    sessions = visibleSessions,
+                    selectedSessionId = selectedSession?.id,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.42f),
+                    onSelectSession = viewModel::selectSession,
+                )
+
+                SessionInspector(
+                    session = selectedSession,
+                    requestTab = requestTab,
+                    onRequestTabChange = { requestTab = it },
+                    responseTab = responseTab,
+                    onResponseTabChange = { responseTab = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(0.58f),
+                )
+            }
+        }
     }
 }
 
@@ -141,7 +185,11 @@ private fun SessionsToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Captured Requests", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Captured Requests",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
             val listeningAddress = state.listeningAddress
             if (listeningAddress != null) {
                 val statusText = if (state.isListening) {
@@ -151,7 +199,7 @@ private fun SessionsToolbar(
                 }
                 Text(
                     text = statusText,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelSmall,
                     color = if (state.isListening) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -161,9 +209,148 @@ private fun SessionsToolbar(
             }
         }
 
-        Button(onClick = onClearSessions, enabled = state.sessions.isNotEmpty()) {
-            Text("Clear")
+        CompactActionButton(
+            label = "Clear",
+            enabled = state.sessions.isNotEmpty(),
+            onClick = onClearSessions,
+        )
+    }
+}
+
+@Composable
+private fun RuntimeErrorBanner(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = "Proxy runtime failed to start",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+
+            CompactActionButton(
+                label = "Dismiss",
+                onClick = onDismiss,
+            )
         }
+    }
+}
+
+@Composable
+private fun DomainSidebar(
+    domains: List<DomainSummary>,
+    selectedDomain: String?,
+    totalCount: Int,
+    modifier: Modifier = Modifier,
+    onDomainSelected: (String?) -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "Domains",
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item {
+                    DomainSidebarRow(
+                        label = "All",
+                        count = totalCount,
+                        isSelected = selectedDomain == null,
+                        onClick = { onDomainSelected(null) },
+                    )
+                }
+
+                item {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                }
+
+                items(
+                    items = domains,
+                    key = { summary -> summary.host },
+                ) { domain ->
+                    DomainSidebarRow(
+                        label = domain.host,
+                        count = domain.count,
+                        isSelected = selectedDomain == domain.host,
+                        onClick = { onDomainSelected(domain.host) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DomainSidebarRow(
+    label: String,
+    count: Int,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val rowBackground = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    } else {
+        Color.Transparent
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(rowBackground)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp),
+        )
     }
 }
 
@@ -176,35 +363,41 @@ private fun RequestsTableCard(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
     ) {
         if (sessions.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     "No HTTP sessions captured yet. Configure your client to use this proxy and send HTTP traffic.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
                 SessionTableHeader()
-                HorizontalDivider()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
 
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     itemsIndexed(items = sessions, key = { _, session -> session.id }) { index, session ->
-                        SessionTableRow(
-                            modifier = Modifier.animateItem(),
-                            session = session,
-                            isSelected = session.id == selectedSessionId,
-                            isEvenRow = index % 2 == 0,
-                            onClick = { onSelectSession(session.id) },
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SessionTableRow(
+                                modifier = Modifier.animateItem(),
+                                session = session,
+                                isSelected = session.id == selectedSessionId,
+                                isEvenRow = index % 2 == 0,
+                                onClick = { onSelectSession(session.id) },
+                            )
+                            if (index != sessions.lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            }
+                        }
                     }
                 }
             }
@@ -217,8 +410,8 @@ private fun SessionTableHeader() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TableHeaderCell("ID", COLUMN_WEIGHT_ID)
@@ -242,9 +435,9 @@ private fun SessionTableRow(
     onClick: () -> Unit,
 ) {
     val rowColor = when {
-        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-        isEvenRow -> MaterialTheme.colorScheme.surface
-        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        isEvenRow -> Color.Transparent
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
     }
 
     Row(
@@ -252,7 +445,7 @@ private fun SessionTableRow(
             .fillMaxWidth()
             .background(rowColor)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TableBodyCell(displaySessionId(session.id), COLUMN_WEIGHT_ID)
@@ -298,10 +491,10 @@ private fun RowScope.TableHeaderCell(
         text = text,
         modifier = Modifier
             .weight(weight)
-            .padding(end = 8.dp),
+            .padding(end = 6.dp),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold,
         textAlign = textAlign,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -319,7 +512,7 @@ private fun RowScope.TableBodyCell(
         text = text,
         modifier = Modifier
             .weight(weight)
-            .padding(end = 8.dp),
+            .padding(end = 6.dp),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         style = MaterialTheme.typography.bodySmall,
@@ -339,42 +532,143 @@ private fun SessionInspector(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
     ) {
         if (session == null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Select a captured request to inspect request and response details.")
+                Text(
+                    text = "Select a captured request to inspect request and response details.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Column(
+                modifier = Modifier.fillMaxSize(),
             ) {
-                RequestDetailPane(
+                SessionSummaryBar(
                     session = session,
-                    selectedTab = requestTab,
-                    onTabSelected = onRequestTabChange,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
-                ResponseDetailPane(
-                    session = session,
-                    selectedTab = responseTab,
-                    onTabSelected = onResponseTabChange,
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                )
+                        .fillMaxWidth()
+                        .weight(1f),
+                ) {
+                    RequestDetailPane(
+                        session = session,
+                        selectedTab = requestTab,
+                        onTabSelected = onRequestTabChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(1.dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
+                    )
+
+                    ResponseDetailPane(
+                        session = session,
+                        selectedTab = responseTab,
+                        onTabSelected = onResponseTabChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun SessionSummaryBar(
+    session: CapturedSession,
+    modifier: Modifier = Modifier,
+) {
+    val methodText = session.request.method.uppercase()
+    val response = session.response
+    val statusLabel = when {
+        response != null -> responseCodeText(response)
+        session.error != null -> "Error"
+        else -> "Pending"
+    }
+    val neutralBadgeContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    val neutralBadgeText = MaterialTheme.colorScheme.onSurfaceVariant
+    val (statusBadgeContainer, statusBadgeTextColor) = when {
+        response != null -> statusCodeColors(response.statusCode)
+        session.error != null -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val protocolColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val hostColor = MaterialTheme.colorScheme.primary
+    val pathColor = Color(0xFF2F8B57)
+    val suffixColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val urlText = buildColorizedUrlText(
+        url = session.request.url,
+        protocolColor = protocolColor,
+        hostColor = hostColor,
+        pathColor = pathColor,
+        suffixColor = suffixColor,
+    )
+
+    Row(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SessionSummaryBadge(
+            text = methodText,
+            containerColor = neutralBadgeContainer,
+            textColor = neutralBadgeText,
+        )
+        SessionSummaryBadge(
+            text = statusLabel,
+            containerColor = statusBadgeContainer,
+            textColor = statusBadgeTextColor,
+        )
+        Text(
+            text = urlText,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun SessionSummaryBadge(
+    text: String,
+    containerColor: Color,
+    textColor: Color,
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = containerColor,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -484,15 +778,15 @@ private fun DetailPane(
     modifier: Modifier = Modifier,
     content: @Composable (SessionDetailTab) -> Unit,
 ) {
-    Card(
+    Surface(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -505,28 +799,66 @@ private fun DetailPane(
                 )
             }
 
-            val tabs = SessionDetailTab.entries
-            SecondaryTabRow(
-                selectedTabIndex = tabs.indexOf(selectedTab),
-                tabs = {
-                    tabs.forEach { tab ->
-                        Tab(
-                            selected = selectedTab == tab,
-                            onClick = { onTabSelected(tab) },
-                            text = { Text(tab.title) },
-                        )
-                    }
-                },
+            CompactTabStrip(
+                selectedTab = selectedTab,
+                onTabSelected = onTabSelected,
             )
 
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 content(selectedTab)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTabStrip(
+    selectedTab: SessionDetailTab,
+    onTabSelected: (SessionDetailTab) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        SessionDetailTab.entries.forEach { tab ->
+            val isSelected = selectedTab == tab
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                } else {
+                    Color.Transparent
+                },
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.75f)
+                    } else {
+                        Color.Transparent
+                    },
+                ),
+                modifier = Modifier.clickable { onTabSelected(tab) },
+            ) {
+                Text(
+                    text = tab.title,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
         }
     }
@@ -541,15 +873,16 @@ private fun MetadataTable(entries: List<Pair<String, String>>) {
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
                 Text(
                     text = "Key",
@@ -570,13 +903,13 @@ private fun MetadataTable(entries: List<Pair<String, String>>) {
                 val rowColor = if (index % 2 == 0) {
                     Color.Transparent
                 } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.35f)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(rowColor)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -605,15 +938,16 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
                 Text(
                     text = "Header",
@@ -634,13 +968,13 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
                 val rowColor = if (index % 2 == 0) {
                     Color.Transparent
                 } else {
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.35f)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(rowColor)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -658,6 +992,151 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
             }
         }
     }
+}
+
+@Composable
+private fun CompactActionButton(
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val backgroundColor = if (enabled) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    }
+    val textColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = backgroundColor,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.8f else 0.35f),
+        ),
+        modifier = if (enabled) {
+            Modifier.clickable(onClick = onClick)
+        } else {
+            Modifier
+        },
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun buildDomainSummaries(sessions: List<CapturedSession>): List<DomainSummary> {
+    val countsByDomain = linkedMapOf<String, Int>()
+    sessions.forEach { session ->
+        val host = extractRequestHost(session.request.url)
+        countsByDomain[host] = (countsByDomain[host] ?: 0) + 1
+    }
+
+    return countsByDomain.entries
+        .sortedWith(compareByDescending<Map.Entry<String, Int>> { entry -> entry.value }.thenBy { entry -> entry.key })
+        .map { entry ->
+            DomainSummary(
+                host = entry.key,
+                count = entry.value,
+            )
+        }
+}
+
+private fun extractRequestHost(url: String): String {
+    val authority = url
+        .substringAfter("://", url)
+        .substringBefore('/')
+        .substringBefore('?')
+        .substringBefore('#')
+    val hostAndPort = authority.substringAfter('@', authority)
+    val host = when {
+        hostAndPort.startsWith("[") -> hostAndPort.substringAfter('[').substringBefore(']')
+        else -> hostAndPort.substringBefore(':')
+    }.trim().lowercase()
+
+    return host.ifEmpty { "(unknown)" }
+}
+
+private fun buildColorizedUrlText(
+    url: String,
+    protocolColor: Color,
+    hostColor: Color,
+    pathColor: Color,
+    suffixColor: Color,
+) = buildAnnotatedString {
+    val segments = splitUrlSegments(url)
+    segments.protocol?.let { protocol ->
+        withStyle(SpanStyle(color = protocolColor)) {
+            append(protocol)
+            append("://")
+        }
+    }
+    withStyle(SpanStyle(color = hostColor, fontWeight = FontWeight.SemiBold)) {
+        append(segments.host)
+    }
+    withStyle(SpanStyle(color = pathColor)) {
+        append(segments.path)
+    }
+    if (segments.suffix.isNotEmpty()) {
+        withStyle(SpanStyle(color = suffixColor)) {
+            append(segments.suffix)
+        }
+    }
+}
+
+private fun splitUrlSegments(url: String): UrlSegments {
+    val schemeDelimiter = "://"
+    val hasScheme = url.contains(schemeDelimiter)
+    val protocol = if (hasScheme) url.substringBefore(schemeDelimiter) else null
+    val withoutScheme = if (hasScheme) {
+        url.substringAfter(schemeDelimiter)
+    } else {
+        url
+    }
+
+    val boundaryIndex = withoutScheme.indexOfAny(charArrayOf('/', '?', '#'))
+    val rawHost = if (boundaryIndex >= 0) {
+        withoutScheme.substring(0, boundaryIndex)
+    } else {
+        withoutScheme
+    }
+    val remainder = if (boundaryIndex >= 0) {
+        withoutScheme.substring(boundaryIndex)
+    } else {
+        ""
+    }
+
+    val host = rawHost
+        .substringAfter('@', rawHost)
+        .ifBlank { "(unknown)" }
+    val suffixStartIndex = remainder.indexOfAny(charArrayOf('?', '#'))
+    val path = when {
+        remainder.isEmpty() -> "/"
+        suffixStartIndex < 0 -> remainder
+        suffixStartIndex == 0 -> "/"
+        else -> remainder.substring(0, suffixStartIndex)
+    }
+    val suffix = when {
+        remainder.isEmpty() -> ""
+        suffixStartIndex < 0 -> ""
+        else -> remainder.substring(suffixStartIndex)
+    }
+
+    return UrlSegments(
+        protocol = protocol,
+        host = host,
+        path = path,
+        suffix = suffix,
+    )
 }
 
 @Composable
@@ -683,12 +1162,12 @@ private fun ResponseCodeBadge(session: CapturedSession) {
     }
 
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(4.dp),
         color = containerColor,
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
             color = textColor,
             maxLines = 1,
@@ -908,29 +1387,8 @@ private fun BodyBlock(
 
 @Composable
 private fun JsonBodyTree(body: String) {
-    var showRawText by remember(body) { mutableStateOf(false) }
-    if (showRawText) {
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        return
-    }
-
-    JsonTree(
+    JsonTreeView(
         json = body,
         modifier = Modifier.fillMaxWidth(),
-        textStyle = MaterialTheme.typography.bodySmall,
-        onLoading = {
-            Text(
-                text = "Loading JSON...",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        onError = {
-            println("ERROR: ${it.localizedMessage}")
-            showRawText = true
-        },
     )
 }
