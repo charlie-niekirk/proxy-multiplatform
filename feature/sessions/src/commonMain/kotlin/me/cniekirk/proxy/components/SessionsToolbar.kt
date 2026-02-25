@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.SessionsState
 import me.cniekirk.proxy.ui.CompactButton
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 @Composable
 internal fun SessionsToolbar(
@@ -29,16 +31,22 @@ internal fun SessionsToolbar(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = "Captured Requests",
+                text = stringResource(Res.string.sessions_toolbar_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
             )
             val listeningAddress = state.listeningAddress
             if (listeningAddress != null) {
                 val statusText = if (state.isListening) {
-                    "Listening on $listeningAddress"
+                    stringResource(
+                        Res.string.sessions_toolbar_listening_on,
+                        listeningAddress,
+                    )
                 } else {
-                    "Failed to listen on $listeningAddress"
+                    stringResource(
+                        Res.string.sessions_toolbar_failed_listen,
+                        listeningAddress,
+                    )
                 }
                 Text(
                     text = statusText,
@@ -53,7 +61,7 @@ internal fun SessionsToolbar(
         }
 
         CompactButton(
-            label = "Clear",
+            label = stringResource(Res.string.sessions_toolbar_clear),
             enabled = state.sessions.isNotEmpty(),
             onClick = onClearSessions,
         )
@@ -65,6 +73,10 @@ internal fun RuntimeErrorBanner(
     message: String,
     onDismiss: () -> Unit,
 ) {
+    val resolvedMessage = message.ifBlank {
+        stringResource(Res.string.sessions_runtime_error_unknown)
+    }
+
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = MaterialTheme.colorScheme.errorContainer,
@@ -82,20 +94,20 @@ internal fun RuntimeErrorBanner(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "Proxy runtime failed to start",
+                    text = stringResource(Res.string.sessions_runtime_error_title),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
                 Text(
-                    text = message,
+                    text = resolvedMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
 
             CompactButton(
-                label = "Dismiss",
+                label = stringResource(Res.string.sessions_action_dismiss),
                 onClick = onDismiss,
             )
         }

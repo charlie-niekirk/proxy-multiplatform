@@ -1,5 +1,7 @@
 package me.cniekirk.proxy
 
+internal const val UnknownSessionHost = "__unknown_session_host__"
+
 internal data class SessionTreeFilter(
     val host: String? = null,
     val pathPrefix: List<String> = emptyList(),
@@ -200,7 +202,7 @@ private fun extractRequestHost(url: String): String {
         else -> hostAndPort.substringBefore(':')
     }.trim().lowercase()
 
-    return host.ifEmpty { "(unknown)" }
+    return host.ifEmpty { UnknownSessionHost }
 }
 
 private fun hostNodeKey(host: String): String {

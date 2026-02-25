@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.CapturedSession
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 private const val COLUMN_WEIGHT_ID = 0.8f
 private const val COLUMN_WEIGHT_METHOD = 1.1f
@@ -58,7 +60,7 @@ internal fun RequestsTableCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "No HTTP sessions captured yet. Configure your client to use this proxy and send HTTP traffic.",
+                    stringResource(Res.string.sessions_table_empty),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -97,15 +99,27 @@ private fun SessionTableHeader() {
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TableHeaderCell("ID", COLUMN_WEIGHT_ID)
-        TableHeaderCell("Method", COLUMN_WEIGHT_METHOD)
-        TableHeaderCell("URL", COLUMN_WEIGHT_URL)
-        TableHeaderCell("Status", COLUMN_WEIGHT_STATUS)
-        TableHeaderCell("Code", COLUMN_WEIGHT_CODE)
-        TableHeaderCell("Time", COLUMN_WEIGHT_TIME)
-        TableHeaderCell("Duration", COLUMN_WEIGHT_DURATION, textAlign = TextAlign.End)
-        TableHeaderCell("Request", COLUMN_WEIGHT_REQUEST_BYTES, textAlign = TextAlign.End)
-        TableHeaderCell("Response", COLUMN_WEIGHT_RESPONSE_BYTES, textAlign = TextAlign.End)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_id), COLUMN_WEIGHT_ID)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_method), COLUMN_WEIGHT_METHOD)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_url), COLUMN_WEIGHT_URL)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_status), COLUMN_WEIGHT_STATUS)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_code), COLUMN_WEIGHT_CODE)
+        TableHeaderCell(stringResource(Res.string.sessions_table_header_time), COLUMN_WEIGHT_TIME)
+        TableHeaderCell(
+            stringResource(Res.string.sessions_table_header_duration),
+            COLUMN_WEIGHT_DURATION,
+            textAlign = TextAlign.End,
+        )
+        TableHeaderCell(
+            stringResource(Res.string.sessions_table_header_request),
+            COLUMN_WEIGHT_REQUEST_BYTES,
+            textAlign = TextAlign.End,
+        )
+        TableHeaderCell(
+            stringResource(Res.string.sessions_table_header_response),
+            COLUMN_WEIGHT_RESPONSE_BYTES,
+            textAlign = TextAlign.End,
+        )
     }
 }
 
@@ -216,13 +230,13 @@ private fun ResponseCodeBadge(session: CapturedSession) {
         session.error != null -> Triple(
             MaterialTheme.colorScheme.errorContainer,
             MaterialTheme.colorScheme.onErrorContainer,
-            "Error",
+            stringResource(Res.string.sessions_status_error),
         )
 
         else -> Triple(
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            "Pending",
+            stringResource(Res.string.sessions_status_pending),
         )
     }
 

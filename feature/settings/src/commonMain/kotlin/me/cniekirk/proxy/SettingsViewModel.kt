@@ -68,8 +68,7 @@ class SettingsViewModel(
                 reduce {
                     state.copy(
                         isProvisioningCertificate = false,
-                        sslToggleError = certificateProvisionResult.exceptionOrNull()?.message
-                            ?: "Failed to generate certificate material.",
+                        sslToggleError = certificateProvisionResult.exceptionOrNull()?.message.orEmpty(),
                     )
                 }
                 return@intent

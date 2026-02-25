@@ -50,13 +50,26 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactTextField
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 @Composable
 internal fun JsonTreeView(
     json: String,
     modifier: Modifier = Modifier,
 ) {
-    println("JSON: $json")
+    val parseFailedLabel = stringResource(Res.string.sessions_json_parse_failed)
+    val searchPromptLabel = stringResource(Res.string.sessions_json_search_prompt)
+    val invalidRegexLabel = stringResource(Res.string.sessions_json_search_invalid_regex)
+    val noMatchesLabel = stringResource(Res.string.sessions_json_search_no_matches)
+    val findLabel = stringResource(Res.string.sessions_json_find_label)
+    val regexLabel = stringResource(Res.string.sessions_json_regex_label)
+    val findActionLabel = stringResource(Res.string.sessions_json_action_find)
+    val nextActionLabel = stringResource(Res.string.sessions_json_action_next)
+    val invalidRegexPatternLabel = stringResource(Res.string.sessions_json_invalid_regex_pattern)
+    val summaryKeysLabel = stringResource(Res.string.sessions_json_summary_keys)
+    val summaryItemsLabel = stringResource(Res.string.sessions_json_summary_items)
+
     val parseResult = remember(json) {
         runCatching { JsonTreeParser.parseToJsonElement(json) }
     }
@@ -69,7 +82,7 @@ internal fun JsonTreeView(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "Unable to parse JSON. Showing raw text.",
+                text = parseFailedLabel,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -103,7 +116,13 @@ internal fun JsonTreeView(
         orderedNodes.associate { node -> node.id to node.parentId }
     }
     val rowTextById = remember(orderedNodes) {
-        orderedNodes.associate { node -> node.id to nodeText(node) }
+        orderedNodes.associate { node ->
+            node.id to nodeText(
+                node = node,
+                summaryKeysLabel = summaryKeysLabel,
+                summaryItemsLabel = summaryItemsLabel,
+            )
+        }
     }
     val expandedNodes = remember(rootNode) {
         mutableStateMapOf<String, Boolean>().apply {
@@ -146,6 +165,7 @@ internal fun JsonTreeView(
             regexEnabled = regexEnabled,
             orderedNodes = orderedNodes,
             rowTextById = rowTextById,
+            invalidRegexPatternLabel = invalidRegexPatternLabel,
         )
         searchError = computation.error
         searchHits = computation.hits
@@ -159,13 +179,13 @@ internal fun JsonTreeView(
                 regexEnabled = regexEnabled,
                 orderedNodes = orderedNodes,
                 rowTextById = rowTextById,
+                invalidRegexPatternLabel = invalidRegexPatternLabel,
             )
             searchError = computation.error
             searchHits = computation.hits
             selectedHitIndex = if (computation.hits.isEmpty()) -1 else 0
         } else {
             selectedHitIndex = when {
-                searchHits.isEmpty() -> -1
                 selectedHitIndex + 1 >= searchHits.size -> 0
                 else -> selectedHitIndex + 1
             }
@@ -173,10 +193,14 @@ internal fun JsonTreeView(
     }
 
     val searchSummary = when {
-        searchText.isBlank() -> "Enter search text"
-        searchError != null -> "Invalid regex"
-        searchHits.isEmpty() -> "No matches"
-        else -> "${selectedHitIndex + 1} of ${searchHits.size}"
+        searchText.isBlank() -> searchPromptLabel
+        searchError != null -> invalidRegexLabel
+        searchHits.isEmpty() -> noMatchesLabel
+        else -> stringResource(
+            Res.string.sessions_json_search_count,
+            selectedHitIndex + 1,
+            searchHits.size,
+        )
     }
 
     Column(
@@ -194,7 +218,7 @@ internal fun JsonTreeView(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             textStyle = monoTextStyle,
-            label = "Find in JSON",
+            label = findLabel,
         )
 
         Row(
@@ -216,7 +240,7 @@ internal fun JsonTreeView(
                     },
                 )
                 Text(
-                    text = "Regex",
+                    text = regexLabel,
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -232,12 +256,12 @@ internal fun JsonTreeView(
             }
 
             CompactButton(
-                label = "Find",
+                label = findActionLabel,
                 onClick = runFind,
                 enabled = searchText.isNotBlank(),
             )
             CompactButton(
-                label = "Next",
+                label = nextActionLabel,
                 onClick = runFindNext,
                 enabled = searchText.isNotBlank(),
             )
@@ -249,6 +273,8 @@ internal fun JsonTreeView(
             hitRangesByNode = hitRangesByNode,
             selectedHit = selectedHit,
             bringIntoViewByNode = bringIntoViewByNode,
+            summaryKeysLabel = summaryKeysLabel,
+            summaryItemsLabel = summaryItemsLabel,
         )
     }
 }
@@ -260,6 +286,8 @@ private fun JsonTreeNodeRow(
     hitRangesByNode: Map<String, List<IntRange>>,
     selectedHit: JsonSearchHit?,
     bringIntoViewByNode: MutableMap<String, BringIntoViewRequester>,
+    summaryKeysLabel: String,
+    summaryItemsLabel: String,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val monoTextStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
@@ -267,7 +295,13 @@ private fun JsonTreeNodeRow(
     val hasChildren = node.children.isNotEmpty()
     val expanded = expandedNodes[node.id] ?: false
     val requester = remember(node.id) { BringIntoViewRequester() }
-    val textPieces = remember(node.id) { buildNodeTextPieces(node) }
+    val textPieces = remember(node.id, summaryKeysLabel, summaryItemsLabel) {
+        buildNodeTextPieces(
+            node = node,
+            summaryKeysLabel = summaryKeysLabel,
+            summaryItemsLabel = summaryItemsLabel,
+        )
+    }
     val rowMatchRanges = hitRangesByNode[node.id].orEmpty()
     val activeRange = selectedHit?.takeIf { hit -> hit.nodeId == node.id }?.range
     val activeRow = activeRange != null
@@ -345,6 +379,8 @@ private fun JsonTreeNodeRow(
                         hitRangesByNode = hitRangesByNode,
                         selectedHit = selectedHit,
                         bringIntoViewByNode = bringIntoViewByNode,
+                        summaryKeysLabel = summaryKeysLabel,
+                        summaryItemsLabel = summaryItemsLabel,
                     )
                 }
             }
@@ -594,6 +630,7 @@ private fun computeSearchHits(
     regexEnabled: Boolean,
     orderedNodes: List<JsonTreeNode>,
     rowTextById: Map<String, String>,
+    invalidRegexPatternLabel: String,
 ): JsonSearchComputation {
     val normalizedQuery = query.trim()
     if (normalizedQuery.isEmpty()) {
@@ -609,7 +646,7 @@ private fun computeSearchHits(
         } catch (error: IllegalArgumentException) {
             return JsonSearchComputation(
                 hits = emptyList(),
-                error = error.localizedMessage ?: "Invalid regex pattern",
+                error = error.localizedMessage ?: invalidRegexPatternLabel,
             )
         }
     } else {
@@ -675,8 +712,16 @@ private fun findRegexRanges(
     return ranges
 }
 
-private fun nodeText(node: JsonTreeNode): String {
-    val pieces = buildNodeTextPieces(node)
+private fun nodeText(
+    node: JsonTreeNode,
+    summaryKeysLabel: String,
+    summaryItemsLabel: String,
+): String {
+    val pieces = buildNodeTextPieces(
+        node = node,
+        summaryKeysLabel = summaryKeysLabel,
+        summaryItemsLabel = summaryItemsLabel,
+    )
     return buildString {
         pieces.forEach { piece ->
             append(piece.text)
@@ -684,7 +729,11 @@ private fun nodeText(node: JsonTreeNode): String {
     }
 }
 
-private fun buildNodeTextPieces(node: JsonTreeNode): List<JsonTextPiece> {
+private fun buildNodeTextPieces(
+    node: JsonTreeNode,
+    summaryKeysLabel: String,
+    summaryItemsLabel: String,
+): List<JsonTextPiece> {
     val pieces = mutableListOf<JsonTextPiece>()
 
     when {
@@ -709,7 +758,7 @@ private fun buildNodeTextPieces(node: JsonTreeNode): List<JsonTextPiece> {
                 pieces += JsonTextPiece("{}", JsonTokenType.Punctuation)
             } else {
                 pieces += JsonTextPiece("{", JsonTokenType.Punctuation)
-                pieces += JsonTextPiece("${value.size} keys", JsonTokenType.Summary)
+                pieces += JsonTextPiece("${value.size} $summaryKeysLabel", JsonTokenType.Summary)
                 pieces += JsonTextPiece("}", JsonTokenType.Punctuation)
             }
         }
@@ -719,7 +768,7 @@ private fun buildNodeTextPieces(node: JsonTreeNode): List<JsonTextPiece> {
                 pieces += JsonTextPiece("[]", JsonTokenType.Punctuation)
             } else {
                 pieces += JsonTextPiece("[", JsonTokenType.Punctuation)
-                pieces += JsonTextPiece("${value.size} items", JsonTokenType.Summary)
+                pieces += JsonTextPiece("${value.size} $summaryItemsLabel", JsonTokenType.Summary)
                 pieces += JsonTextPiece("]", JsonTokenType.Punctuation)
             }
         }

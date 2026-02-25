@@ -33,7 +33,9 @@ import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactButtonStyle
 import me.cniekirk.proxy.ui.CompactTextField
+import org.jetbrains.compose.resources.stringResource
 import org.orbitmvi.orbit.compose.collectAsState
+import proxy.feature.settings.generated.resources.*
 
 @Composable
 fun SettingsScreen(settingsViewModel: SettingsViewModel) {
@@ -45,7 +47,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Proxy Settings",
+            text = stringResource(Res.string.settings_title_proxy),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
@@ -56,13 +58,13 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
                 portField = it
                 it.toIntOrNull()?.let(settingsViewModel::updateProxyPort)
             },
-            label = "Proxy port",
+            label = stringResource(Res.string.settings_label_proxy_port),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Enable SSL decryption")
+            Text(stringResource(Res.string.settings_label_enable_ssl_decryption))
             Switch(
                 checked = state.settings.proxy.sslDecryptionEnabled,
                 enabled = !state.isProvisioningCertificate,
@@ -76,26 +78,32 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
         val certificateState = state.settings.certificate
         Text(
             text = if (certificateState.generated) {
-                "Root certificate generated."
+                stringResource(Res.string.settings_certificate_generated)
             } else {
-                "Root certificate not generated."
+                stringResource(Res.string.settings_certificate_not_generated)
             },
             style = MaterialTheme.typography.bodyMedium,
         )
         certificateState.fingerprint?.let { fingerprint ->
-            Text("Fingerprint (SHA-256): $fingerprint", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = stringResource(Res.string.settings_certificate_fingerprint, fingerprint),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
 
         CertificateOnboardingCard(onboardingUrls = state.onboardingUrls)
 
         state.sslToggleError?.let { errorMessage ->
+            val resolvedError = errorMessage.ifBlank {
+                stringResource(Res.string.settings_error_certificate_generation_failed)
+            }
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                 ),
             ) {
                 Text(
-                    text = errorMessage,
+                    text = resolvedError,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp),
@@ -121,22 +129,22 @@ private fun CertificateOnboardingCard(onboardingUrls: CertificateOnboardingUrls)
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Certificate Onboarding",
+                text = stringResource(Res.string.settings_certificate_onboarding_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "Scan the QR code from a mobile device on the same network, then install and trust the root certificate.",
+                text = stringResource(Res.string.settings_certificate_onboarding_description),
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                text = "QR target: $qrTargetUrl",
+                text = stringResource(Res.string.settings_certificate_qr_target, qrTargetUrl),
                 style = MaterialTheme.typography.labelMedium,
             )
 
             if (qrCodeMatrix == null) {
                 Text(
-                    text = "Unable to generate QR code for the current onboarding URL.",
+                    text = stringResource(Res.string.settings_certificate_qr_error),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -148,7 +156,7 @@ private fun CertificateOnboardingCard(onboardingUrls: CertificateOnboardingUrls)
             }
 
             CopyableUrlRow(
-                label = "Friendly URL",
+                label = stringResource(Res.string.settings_certificate_friendly_url),
                 url = onboardingUrls.friendlyUrl,
                 onCopy = { clipboardManager.setText(AnnotatedString(onboardingUrls.friendlyUrl)) },
             )
@@ -156,33 +164,29 @@ private fun CertificateOnboardingCard(onboardingUrls: CertificateOnboardingUrls)
                 ?.takeUnless { fallback -> fallback == onboardingUrls.friendlyUrl }
                 ?.let { fallbackUrl ->
                     CopyableUrlRow(
-                        label = "LAN fallback URL",
+                        label = stringResource(Res.string.settings_certificate_fallback_url),
                         url = fallbackUrl,
                         onCopy = { clipboardManager.setText(AnnotatedString(fallbackUrl)) },
                     )
                 }
 
             Text(
-                text = "iOS trust steps",
+                text = stringResource(Res.string.settings_ios_trust_steps_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "1. Open the URL and download/install the profile.\n" +
-                    "2. In Settings > General > VPN & Device Management, install it.\n" +
-                    "3. In Settings > General > About > Certificate Trust Settings, enable full trust.",
+                text = stringResource(Res.string.settings_ios_trust_steps_body),
                 style = MaterialTheme.typography.bodySmall,
             )
 
             Text(
-                text = "Android trust steps",
+                text = stringResource(Res.string.settings_android_trust_steps_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "1. Open the URL and download the certificate.\n" +
-                    "2. Go to Settings > Security (or Security & privacy) > Encryption & credentials.\n" +
-                    "3. Install a CA certificate and select the downloaded file.",
+                text = stringResource(Res.string.settings_android_trust_steps_body),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -215,7 +219,7 @@ private fun CopyableUrlRow(
             )
         }
         CompactButton(
-            label = "Copy",
+            label = stringResource(Res.string.settings_action_copy),
             onClick = onCopy,
             style = CompactButtonStyle.Text,
         )

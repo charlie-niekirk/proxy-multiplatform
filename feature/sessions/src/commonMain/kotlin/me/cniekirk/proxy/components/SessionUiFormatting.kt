@@ -1,5 +1,6 @@
 package me.cniekirk.proxy.components
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -7,6 +8,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import me.cniekirk.proxy.CapturedResponse
 import me.cniekirk.proxy.CapturedSession
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 private data class UrlSegments(
     val protocol: String?,
@@ -15,6 +18,7 @@ private data class UrlSegments(
     val suffix: String,
 )
 
+@Composable
 internal fun buildColorizedUrlText(
     url: String,
     protocolColor: Color,
@@ -22,7 +26,10 @@ internal fun buildColorizedUrlText(
     pathColor: Color,
     suffixColor: Color,
 ) = buildAnnotatedString {
-    val segments = splitUrlSegments(url)
+    val segments = splitUrlSegments(
+        url = url,
+        unknownHostLabel = stringResource(Res.string.sessions_unknown_host),
+    )
     segments.protocol?.let { protocol ->
         withStyle(SpanStyle(color = protocolColor)) {
             append(protocol)
@@ -42,14 +49,18 @@ internal fun buildColorizedUrlText(
     }
 }
 
+@Composable
 internal fun responseCodeText(response: CapturedResponse): String {
     val reasonPhrase = response.reasonPhrase
         ?.trim()
         ?.takeIf(String::isNotEmpty)
-        ?: defaultReasonPhrase(response.statusCode)
 
-    return if (reasonPhrase.isNotEmpty()) {
-        "${response.statusCode} $reasonPhrase"
+    return if (reasonPhrase != null) {
+        stringResource(
+            Res.string.sessions_response_code,
+            response.statusCode,
+            reasonPhrase,
+        )
     } else {
         response.statusCode.toString()
     }
@@ -65,38 +76,51 @@ internal fun statusCodeColors(statusCode: Int): Pair<Color, Color> {
     }
 }
 
+@Composable
 internal fun sessionLifecycleStatus(session: CapturedSession): String {
     return when {
-        session.response != null -> "Completed"
-        session.error != null -> "Error"
-        else -> "Pending"
+        session.response != null -> stringResource(Res.string.sessions_status_completed)
+        session.error != null -> stringResource(Res.string.sessions_status_error)
+        else -> stringResource(Res.string.sessions_status_pending)
     }
 }
 
+@Composable
 internal fun formatDuration(durationMillis: Long?): String {
-    val value = durationMillis ?: return "-"
+    val value = durationMillis ?: return stringResource(Res.string.sessions_value_unavailable)
     if (value < 1_000) {
-        return "$value ms"
+        return stringResource(Res.string.sessions_duration_milliseconds, value)
     }
 
     val wholeSeconds = value / 1_000
     val hundredths = (value % 1_000) / 10
-    return "$wholeSeconds.${hundredths.toString().padStart(2, '0')} s"
+    return stringResource(
+        Res.string.sessions_duration_seconds,
+        wholeSeconds,
+        hundredths,
+    )
 }
 
+@Composable
 internal fun formatBytes(value: Long?): String {
-    val bytes = value ?: return "-"
+    val bytes = value ?: return stringResource(Res.string.sessions_value_unavailable)
     if (bytes < 1024) {
-        return "$bytes B"
+        return stringResource(Res.string.sessions_size_bytes, bytes)
     }
 
     val kib = bytes / 1024.0
     if (kib < 1024.0) {
-        return "${formatWithSingleDecimal(kib)} KB"
+        return stringResource(
+            Res.string.sessions_size_kilobytes,
+            formatWithSingleDecimal(kib),
+        )
     }
 
     val mib = kib / 1024.0
-    return "${formatWithSingleDecimal(mib)} MB"
+    return stringResource(
+        Res.string.sessions_size_megabytes,
+        formatWithSingleDecimal(mib),
+    )
 }
 
 internal fun formatCapturedTimeUtc(timestampEpochMillis: Long): String {
@@ -121,7 +145,10 @@ internal fun displaySessionId(sessionId: String): String {
     return sessionId.takeLast(6)
 }
 
-private fun splitUrlSegments(url: String): UrlSegments {
+private fun splitUrlSegments(
+    url: String,
+    unknownHostLabel: String,
+): UrlSegments {
     val schemeDelimiter = "://"
     val hasScheme = url.contains(schemeDelimiter)
     val protocol = if (hasScheme) url.substringBefore(schemeDelimiter) else null
@@ -145,7 +172,7 @@ private fun splitUrlSegments(url: String): UrlSegments {
 
     val host = rawHost
         .substringAfter('@', rawHost)
-        .ifBlank { "(unknown)" }
+        .ifBlank { unknownHostLabel }
     val suffixStartIndex = remainder.indexOfAny(charArrayOf('?', '#'))
     val path = when {
         remainder.isEmpty() -> "/"
@@ -165,43 +192,6 @@ private fun splitUrlSegments(url: String): UrlSegments {
         path = path,
         suffix = suffix,
     )
-}
-
-private fun defaultReasonPhrase(statusCode: Int): String {
-    return when (statusCode) {
-        100 -> "Continue"
-        101 -> "Switching Protocols"
-        200 -> "OK"
-        201 -> "Created"
-        202 -> "Accepted"
-        204 -> "No Content"
-        206 -> "Partial Content"
-        300 -> "Multiple Choices"
-        301 -> "Moved Permanently"
-        302 -> "Found"
-        304 -> "Not Modified"
-        307 -> "Temporary Redirect"
-        308 -> "Permanent Redirect"
-        400 -> "Bad Request"
-        401 -> "Unauthorized"
-        403 -> "Forbidden"
-        404 -> "Not Found"
-        405 -> "Method Not Allowed"
-        408 -> "Request Timeout"
-        409 -> "Conflict"
-        410 -> "Gone"
-        413 -> "Payload Too Large"
-        415 -> "Unsupported Media Type"
-        418 -> "I'm a Teapot"
-        422 -> "Unprocessable Entity"
-        429 -> "Too Many Requests"
-        500 -> "Internal Server Error"
-        501 -> "Not Implemented"
-        502 -> "Bad Gateway"
-        503 -> "Service Unavailable"
-        504 -> "Gateway Timeout"
-        else -> ""
-    }
 }
 
 private fun formatWithSingleDecimal(value: Double): String {
