@@ -36,6 +36,7 @@ import coil3.request.ImageRequest
 import com.neoutils.highlight.compose.extension.spanStyle
 import com.neoutils.highlight.compose.remember.rememberAnnotatedString
 import com.neoutils.highlight.compose.remember.rememberHighlight
+import me.cniekirk.proxy.AppliedRuleTrace
 import me.cniekirk.proxy.CapturedBodyType
 import me.cniekirk.proxy.CapturedSession
 import me.cniekirk.proxy.HeaderEntry
@@ -208,16 +209,21 @@ private fun RequestDetailPane(
     ) { tab ->
         when (tab) {
             SessionDetailTab.Overview -> {
-                MetadataTable(
-                    entries = listOf(
-                        "Method" to session.request.method,
-                        "URL" to session.request.url,
-                        "Captured (UTC)" to formatCapturedTimeUtc(session.request.timestampEpochMillis),
-                        "Body Type" to session.request.bodyType.name,
-                        "Body Size" to formatBytes(session.request.bodySizeBytes),
-                        "Headers" to session.request.headers.size.toString(),
-                    ),
-                )
+                val entries = buildList {
+                    add("Method" to session.request.method)
+                    add("URL" to session.request.url)
+                    add("Captured (UTC)" to formatCapturedTimeUtc(session.request.timestampEpochMillis))
+                    add("Body Type" to session.request.bodyType.name)
+                    add("Body Size" to formatBytes(session.request.bodySizeBytes))
+                    add("Headers" to session.request.headers.size.toString())
+
+                    val requestRuleCount = session.appliedRules.count { trace -> trace.appliedToRequest }
+                    add("Applied Request Rules" to requestRuleCount.toString())
+                    if (requestRuleCount > 0) {
+                        add("Request Rule Trace" to formatAppliedRuleTrace(session.appliedRules, requestScope = true))
+                    }
+                }
+                MetadataTable(entries = entries)
             }
 
             SessionDetailTab.Headers -> HeaderTable(session.request.headers)
@@ -272,6 +278,11 @@ private fun ResponseDetailPane(
                     add("Body Type" to response.bodyType.name)
                     add("Body Size" to formatBytes(response.bodySizeBytes))
                     add("Headers" to response.headers.size.toString())
+                    val responseRuleCount = session.appliedRules.count { trace -> trace.appliedToResponse }
+                    add("Applied Response Rules" to responseRuleCount.toString())
+                    if (responseRuleCount > 0) {
+                        add("Response Rule Trace" to formatAppliedRuleTrace(session.appliedRules, requestScope = false))
+                    }
                     session.error?.let { add("Warning" to it) }
                 }
                 MetadataTable(entries = entries)
@@ -511,6 +522,23 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
                 }
             }
         }
+    }
+}
+
+private fun formatAppliedRuleTrace(
+    traces: List<AppliedRuleTrace>,
+    requestScope: Boolean,
+): String {
+    val scopedTraces = traces.filter { trace ->
+        if (requestScope) trace.appliedToRequest else trace.appliedToResponse
+    }
+    if (scopedTraces.isEmpty()) {
+        return "None"
+    }
+    return scopedTraces.joinToString(separator = "\n") { trace ->
+        val mutationSummary = trace.mutations.joinToString(separator = ", ")
+            .ifBlank { "matched without action details" }
+        "${trace.ruleName}: $mutationSummary"
     }
 }
 

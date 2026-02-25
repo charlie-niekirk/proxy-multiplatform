@@ -34,6 +34,7 @@ kotlin {
             implementation(projects.core.proxy)
             implementation(projects.core.storage)
             implementation(projects.core.tls)
+            implementation(projects.core.ui)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

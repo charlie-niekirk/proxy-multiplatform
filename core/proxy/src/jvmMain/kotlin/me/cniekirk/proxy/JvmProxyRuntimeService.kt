@@ -42,6 +42,8 @@ import javax.net.ssl.SSLSocketFactory
 class JvmProxyRuntimeService(
     private val settingsRepository: SettingsRepository,
     private val sessionRepository: InMemorySessionRepository,
+    private val ruleRepository: RuleRepository,
+    private val ruleEngine: RuleEngine,
     private val tlsService: JvmTlsService,
     private val certificateDistributionService: CertificateDistributionService,
 ) : ProxyRuntimeService {
@@ -178,15 +180,30 @@ class JvmProxyRuntimeService(
             }
 
             val requestTimestamp = System.currentTimeMillis()
+            val rules = ruleRepository.rules.first()
+            val requestMatchContext = buildRuleMatchContext(targetUrl)
+            val requestMutationResult = ruleEngine.applyRequestRules(
+                rules = rules,
+                request = RuleHttpRequest(
+                    method = request.method,
+                    matchContext = requestMatchContext,
+                    headers = request.headers,
+                    bodyBytes = request.bodyBytes,
+                ),
+            )
+            val effectiveRequest = request.copy(
+                headers = requestMutationResult.value.headers,
+                bodyBytes = requestMutationResult.value.bodyBytes,
+            )
             val requestPreview = buildBodyPreview(
-                bodyBytes = request.bodyBytes,
-                headers = request.headers,
+                bodyBytes = effectiveRequest.bodyBytes,
+                headers = effectiveRequest.headers,
                 maxBodyCaptureBytes = maxBodyCaptureBytes,
             )
             logDebug("Forwarding ${request.method} ${targetUrl} upstream")
 
             val upstreamResponse = try {
-                forwardRequest(targetUrl, request)
+                forwardRequest(targetUrl, effectiveRequest)
             } catch (error: Exception) {
                 val finishedAt = System.currentTimeMillis()
                 logError("Upstream request failed for ${request.method} ${targetUrl}: ${error.message}", error)
@@ -200,66 +217,89 @@ class JvmProxyRuntimeService(
                     CapturedSession(
                         id = UUID.randomUUID().toString(),
                         request = CapturedRequest(
-                            method = request.method,
+                            method = effectiveRequest.method,
                             url = targetUrl.toString(),
-                            headers = request.headers,
+                            headers = effectiveRequest.headers,
                             body = requestPreview,
-                            bodySizeBytes = request.bodyBytes.size.toLong(),
+                            bodySizeBytes = effectiveRequest.bodyBytes.size.toLong(),
                             timestampEpochMillis = requestTimestamp,
                         ),
                         response = null,
                         error = error.message ?: error::class.simpleName,
                         durationMillis = finishedAt - requestTimestamp,
+                        appliedRules = buildAppliedRuleTraces(
+                            requestTraces = requestMutationResult.traces,
+                            responseTraces = emptyList(),
+                        ),
                     ),
                 )
                 return
             }
 
-            writeUpstreamResponse(output, upstreamResponse)
+            val responseMutationResult = ruleEngine.applyResponseRules(
+                rules = rules,
+                requestMatchContext = requestMatchContext,
+                response = RuleHttpResponse(
+                    statusCode = upstreamResponse.statusCode,
+                    reasonPhrase = upstreamResponse.reasonPhrase,
+                    headers = upstreamResponse.headers,
+                    bodyBytes = upstreamResponse.bodyBytes,
+                ),
+            )
+            val effectiveResponse = upstreamResponse.copy(
+                headers = responseMutationResult.value.headers,
+                bodyBytes = responseMutationResult.value.bodyBytes,
+            )
+
+            writeUpstreamResponse(output, effectiveResponse)
 
             val responseTimestamp = System.currentTimeMillis()
             val durationMillis = responseTimestamp - requestTimestamp
             val responseImageBytes = buildImagePreviewBytes(
-                bodyBytes = upstreamResponse.bodyBytes,
-                headers = upstreamResponse.headers,
+                bodyBytes = effectiveResponse.bodyBytes,
+                headers = effectiveResponse.headers,
                 maxBodyCaptureBytes = maxBodyCaptureBytes,
             )
             sessionRepository.addSession(
                 CapturedSession(
                     id = UUID.randomUUID().toString(),
                     request = CapturedRequest(
-                        method = request.method,
+                        method = effectiveRequest.method,
                         url = targetUrl.toString(),
-                        headers = request.headers,
+                        headers = effectiveRequest.headers,
                         body = requestPreview,
-                        bodySizeBytes = request.bodyBytes.size.toLong(),
+                        bodySizeBytes = effectiveRequest.bodyBytes.size.toLong(),
                         timestampEpochMillis = requestTimestamp,
                     ),
                     response = CapturedResponse(
-                        statusCode = upstreamResponse.statusCode,
-                        reasonPhrase = upstreamResponse.reasonPhrase,
-                        headers = upstreamResponse.headers,
+                        statusCode = effectiveResponse.statusCode,
+                        reasonPhrase = effectiveResponse.reasonPhrase,
+                        headers = effectiveResponse.headers,
                         body = if (responseImageBytes != null) {
                             null
-                        } else if (isImageContentType(upstreamResponse.headers)) {
+                        } else if (isImageContentType(effectiveResponse.headers)) {
                             "Image preview unavailable. Response exceeded capture limits or could not be decoded."
                         } else {
                             buildBodyPreview(
-                                bodyBytes = upstreamResponse.bodyBytes,
-                                headers = upstreamResponse.headers,
+                                bodyBytes = effectiveResponse.bodyBytes,
+                                headers = effectiveResponse.headers,
                                 maxBodyCaptureBytes = maxBodyCaptureBytes,
                             )
                         },
                         imageBytes = responseImageBytes,
-                        bodySizeBytes = upstreamResponse.bodyBytes.size.toLong(),
+                        bodySizeBytes = effectiveResponse.bodyBytes.size.toLong(),
                         timestampEpochMillis = responseTimestamp,
                     ),
                     error = null,
                     durationMillis = durationMillis,
+                    appliedRules = buildAppliedRuleTraces(
+                        requestTraces = requestMutationResult.traces,
+                        responseTraces = responseMutationResult.traces,
+                    ),
                 ),
             )
             logDebug(
-                "Captured ${request.method} ${targetUrl} -> ${upstreamResponse.statusCode} " +
+                "Captured ${effectiveRequest.method} ${targetUrl} -> ${effectiveResponse.statusCode} " +
                     "in ${durationMillis}ms",
             )
         }
@@ -699,7 +739,7 @@ class JvmProxyRuntimeService(
     ): ConnectTunnelResult {
         var connectionEstablished = false
 
-        return runCatching {
+        return try {
             val mitmContext = tlsService.createMitmServerContext(connectTarget.host)
 
             sendConnectionEstablished(clientOutput)
@@ -732,7 +772,7 @@ class JvmProxyRuntimeService(
                     capturedHttpSessions = relayResult.capturedHttpSessions,
                 )
             }
-        }.getOrElse { error ->
+        } catch (error: Exception) {
             ConnectTunnelResult(
                 mode = ConnectMode.MITM,
                 connectionEstablished = connectionEstablished,
@@ -744,7 +784,7 @@ class JvmProxyRuntimeService(
         }
     }
 
-    private fun handleMitmDecryptedHttpTraffic(
+    private suspend fun handleMitmDecryptedHttpTraffic(
         clientInput: InputStream,
         clientOutput: OutputStream,
         connectTarget: ConnectTarget,
@@ -780,7 +820,6 @@ class JvmProxyRuntimeService(
                 )
             }
 
-            clientToUpstreamBytes += request.bodyBytes.size.toLong()
             val requestTimestamp = System.currentTimeMillis()
             val targetUrl = resolveTargetUrl(
                 target = request.target,
@@ -788,14 +827,14 @@ class JvmProxyRuntimeService(
                 defaultScheme = HTTPS_SCHEME,
             )
             val requestUrl = targetUrl?.toString() ?: buildMitmFallbackUrl(connectTarget, request.target)
-            val requestPreview = buildBodyPreview(
-                bodyBytes = request.bodyBytes,
-                headers = request.headers,
-                maxBodyCaptureBytes = maxBodyCaptureBytes,
-            )
 
             if (targetUrl == null) {
                 val failureMessage = "Unable to resolve target URL from decrypted request."
+                val requestPreview = buildBodyPreview(
+                    bodyBytes = request.bodyBytes,
+                    headers = request.headers,
+                    maxBodyCaptureBytes = maxBodyCaptureBytes,
+                )
                 sendPlainTextResponse(
                     output = clientOutput,
                     statusCode = 400,
@@ -834,8 +873,30 @@ class JvmProxyRuntimeService(
                 )
             }
 
+            val rules = ruleRepository.rules.first()
+            val requestMatchContext = buildRuleMatchContext(targetUrl)
+            val requestMutationResult = ruleEngine.applyRequestRules(
+                rules = rules,
+                request = RuleHttpRequest(
+                    method = request.method,
+                    matchContext = requestMatchContext,
+                    headers = request.headers,
+                    bodyBytes = request.bodyBytes,
+                ),
+            )
+            val effectiveRequest = request.copy(
+                headers = requestMutationResult.value.headers,
+                bodyBytes = requestMutationResult.value.bodyBytes,
+            )
+            val requestPreview = buildBodyPreview(
+                bodyBytes = effectiveRequest.bodyBytes,
+                headers = effectiveRequest.headers,
+                maxBodyCaptureBytes = maxBodyCaptureBytes,
+            )
+            clientToUpstreamBytes += effectiveRequest.bodyBytes.size.toLong()
+
             val upstreamResponse = try {
-                forwardRequest(targetUrl, request)
+                forwardRequest(targetUrl, effectiveRequest)
             } catch (error: Exception) {
                 val failureMessage = error.message ?: error::class.simpleName.orEmpty()
                 sendPlainTextResponse(
@@ -849,16 +910,20 @@ class JvmProxyRuntimeService(
                     CapturedSession(
                         id = UUID.randomUUID().toString(),
                         request = CapturedRequest(
-                            method = request.method,
+                            method = effectiveRequest.method,
                             url = requestUrl,
-                            headers = request.headers,
+                            headers = effectiveRequest.headers,
                             body = requestPreview,
-                            bodySizeBytes = request.bodyBytes.size.toLong(),
+                            bodySizeBytes = effectiveRequest.bodyBytes.size.toLong(),
                             timestampEpochMillis = requestTimestamp,
                         ),
                         response = null,
                         error = failureMessage,
                         durationMillis = responseTimestamp - requestTimestamp,
+                        appliedRules = buildAppliedRuleTraces(
+                            requestTraces = requestMutationResult.traces,
+                            responseTraces = emptyList(),
+                        ),
                     ),
                 )
                 return TunnelRelayResult(
@@ -869,52 +934,71 @@ class JvmProxyRuntimeService(
                 )
             }
 
-            writeUpstreamResponse(clientOutput, upstreamResponse)
-            upstreamToClientBytes += upstreamResponse.bodyBytes.size.toLong()
+            val responseMutationResult = ruleEngine.applyResponseRules(
+                rules = rules,
+                requestMatchContext = requestMatchContext,
+                response = RuleHttpResponse(
+                    statusCode = upstreamResponse.statusCode,
+                    reasonPhrase = upstreamResponse.reasonPhrase,
+                    headers = upstreamResponse.headers,
+                    bodyBytes = upstreamResponse.bodyBytes,
+                ),
+            )
+            val effectiveResponse = upstreamResponse.copy(
+                headers = responseMutationResult.value.headers,
+                bodyBytes = responseMutationResult.value.bodyBytes,
+            )
+
+            writeUpstreamResponse(clientOutput, effectiveResponse)
+            upstreamToClientBytes += effectiveResponse.bodyBytes.size.toLong()
 
             val responseTimestamp = System.currentTimeMillis()
             val responseImageBytes = buildImagePreviewBytes(
-                bodyBytes = upstreamResponse.bodyBytes,
-                headers = upstreamResponse.headers,
+                bodyBytes = effectiveResponse.bodyBytes,
+                headers = effectiveResponse.headers,
                 maxBodyCaptureBytes = maxBodyCaptureBytes,
             )
             sessionRepository.addSession(
                 CapturedSession(
                     id = UUID.randomUUID().toString(),
                     request = CapturedRequest(
-                        method = request.method,
+                        method = effectiveRequest.method,
                         url = targetUrl.toString(),
-                        headers = request.headers,
+                        headers = effectiveRequest.headers,
                         body = requestPreview,
-                        bodySizeBytes = request.bodyBytes.size.toLong(),
+                        bodySizeBytes = effectiveRequest.bodyBytes.size.toLong(),
                         timestampEpochMillis = requestTimestamp,
                     ),
                     response = CapturedResponse(
-                        statusCode = upstreamResponse.statusCode,
-                        reasonPhrase = upstreamResponse.reasonPhrase,
-                        headers = upstreamResponse.headers,
+                        statusCode = effectiveResponse.statusCode,
+                        reasonPhrase = effectiveResponse.reasonPhrase,
+                        headers = effectiveResponse.headers,
                         body = if (responseImageBytes != null) {
                             null
-                        } else if (isImageContentType(upstreamResponse.headers)) {
+                        } else if (isImageContentType(effectiveResponse.headers)) {
                             "Image preview unavailable. Response exceeded capture limits or could not be decoded."
                         } else {
                             buildBodyPreview(
-                                bodyBytes = upstreamResponse.bodyBytes,
-                                headers = upstreamResponse.headers,
+                                bodyBytes = effectiveResponse.bodyBytes,
+                                headers = effectiveResponse.headers,
                                 maxBodyCaptureBytes = maxBodyCaptureBytes,
                             )
                         },
                         imageBytes = responseImageBytes,
-                        bodySizeBytes = upstreamResponse.bodyBytes.size.toLong(),
+                        bodySizeBytes = effectiveResponse.bodyBytes.size.toLong(),
                         timestampEpochMillis = responseTimestamp,
                     ),
                     error = null,
                     durationMillis = responseTimestamp - requestTimestamp,
+                    appliedRules = buildAppliedRuleTraces(
+                        requestTraces = requestMutationResult.traces,
+                        responseTraces = responseMutationResult.traces,
+                    ),
                 ),
             )
             capturedHttpSessions += 1
             logDebug(
-                "Captured MITM ${request.method} ${targetUrl} -> ${upstreamResponse.statusCode} " +
+                "Captured MITM ${effectiveRequest.method} ${targetUrl} -> ${effectiveResponse.statusCode} " +
                     "in ${responseTimestamp - requestTimestamp}ms",
             )
         }
@@ -1235,6 +1319,53 @@ class JvmProxyRuntimeService(
         }.getOrNull()
     }
 
+    private fun buildRuleMatchContext(targetUrl: URL): RuleMatchContext {
+        val scheme = targetUrl.protocol
+            .takeIf { protocol -> protocol.isNotBlank() }
+            ?: HTTP_SCHEME
+        val port = when {
+            targetUrl.port >= 0 -> targetUrl.port
+            targetUrl.defaultPort >= 0 -> targetUrl.defaultPort
+            scheme.equals(HTTPS_SCHEME, ignoreCase = true) -> DEFAULT_HTTPS_PORT
+            else -> DEFAULT_HTTP_PORT
+        }
+        return RuleMatchContext(
+            scheme = scheme,
+            host = targetUrl.host.orEmpty(),
+            path = targetUrl.path.ifEmpty { "/" },
+            port = port,
+        )
+    }
+
+    private fun buildAppliedRuleTraces(
+        requestTraces: List<RuleExecutionTrace>,
+        responseTraces: List<RuleExecutionTrace>,
+    ): List<AppliedRuleTrace> {
+        val mergedTraces = linkedMapOf<String, MutableAppliedRuleTrace>()
+        (requestTraces + responseTraces).forEach { trace ->
+            val current = mergedTraces.getOrPut(trace.ruleId) {
+                MutableAppliedRuleTrace(
+                    ruleId = trace.ruleId,
+                    ruleName = trace.ruleName,
+                )
+            }
+            when (trace.target) {
+                RuleTarget.REQUEST -> current.appliedToRequest = true
+                RuleTarget.RESPONSE -> current.appliedToResponse = true
+            }
+            current.mutations += trace.mutations
+        }
+        return mergedTraces.values.map { trace ->
+            AppliedRuleTrace(
+                ruleId = trace.ruleId,
+                ruleName = trace.ruleName,
+                appliedToRequest = trace.appliedToRequest,
+                appliedToResponse = trace.appliedToResponse,
+                mutations = trace.mutations.toList(),
+            )
+        }
+    }
+
     private fun forwardRequest(targetUrl: URL, request: ParsedRequest): UpstreamResponse {
         val connection = (targetUrl.openConnection() as HttpURLConnection).apply {
             requestMethod = request.method
@@ -1246,7 +1377,11 @@ class JvmProxyRuntimeService(
         }
 
         request.headers.forEach { header ->
-            if (!header.name.isHopByHopHeader() && !header.name.equals(HOST_HEADER, ignoreCase = true)) {
+            if (
+                !header.name.isHopByHopHeader() &&
+                !header.name.equals(HOST_HEADER, ignoreCase = true) &&
+                !header.name.equals(CONTENT_LENGTH_HEADER, ignoreCase = true)
+            ) {
                 connection.addRequestProperty(header.name, header.value)
             }
         }
@@ -1556,6 +1691,14 @@ class JvmProxyRuntimeService(
         val errorMessage: String?,
     )
 
+    private data class MutableAppliedRuleTrace(
+        val ruleId: String,
+        val ruleName: String,
+        var appliedToRequest: Boolean = false,
+        var appliedToResponse: Boolean = false,
+        val mutations: MutableList<String> = mutableListOf(),
+    )
+
     private enum class ConnectMode(val label: String) {
         TUNNEL("TUNNEL"),
         MITM("MITM"),
@@ -1570,6 +1713,7 @@ class JvmProxyRuntimeService(
         const val MAX_HEADER_BYTES = 65_536
         const val TERMINATOR_BYTES = 4
         const val TUNNEL_BUFFER_BYTES = 16 * 1024
+        const val DEFAULT_HTTP_PORT = 80
         const val DEFAULT_HTTPS_PORT = 443
 
         const val HEADER_LINE_DELIMITER = "\r\n"
