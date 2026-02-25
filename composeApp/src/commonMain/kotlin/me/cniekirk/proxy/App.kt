@@ -48,15 +48,15 @@ private val AppShapes = Shapes(
 )
 
 @Composable
-fun AppEntryPoint(metroViewModelFactory: MetroViewModelFactory) {
+fun AppEntryPoint(
+    metroViewModelFactory: MetroViewModelFactory,
+    onOpenRulesWindow: () -> Unit,
+) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Sessions", "Rules", "Settings")
 
     CompositionLocalProvider(LocalMetroViewModelFactory provides metroViewModelFactory) {
-        MaterialTheme(
-            colorScheme = AppColorScheme,
-            shapes = AppShapes,
-        ) {
+        CmpProxyTheme {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -65,7 +65,13 @@ fun AppEntryPoint(metroViewModelFactory: MetroViewModelFactory) {
                 CompactAppTabs(
                     tabs = tabs,
                     selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it },
+                    onTabSelected = { tabIndex ->
+                        if (tabIndex == RULES_TAB_INDEX) {
+                            onOpenRulesWindow()
+                        } else {
+                            selectedTab = tabIndex
+                        }
+                    },
                 )
 
                 when (selectedTab) {
@@ -73,7 +79,6 @@ fun AppEntryPoint(metroViewModelFactory: MetroViewModelFactory) {
                         val viewModel = metroViewModel<SessionsViewModel>()
                         SessionsScreen(viewModel)
                     }
-                    1 -> PlaceholderScreen("Rule CRUD UI will be implemented in milestone 5.")
                     else -> {
                         val viewModel = metroViewModel<SettingsViewModel>()
                         SettingsScreen(viewModel)
@@ -85,10 +90,28 @@ fun AppEntryPoint(metroViewModelFactory: MetroViewModelFactory) {
 }
 
 @Composable
-fun PlaceholderScreen(label: String) {
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        Text(label)
+fun RulesWindowEntryPoint(
+    metroViewModelFactory: MetroViewModelFactory,
+    onCloseRequest: () -> Unit,
+) {
+    CompositionLocalProvider(LocalMetroViewModelFactory provides metroViewModelFactory) {
+        CmpProxyTheme {
+            val viewModel = metroViewModel<RulesViewModel>()
+            RulesScreen(
+                viewModel = viewModel,
+                onCloseRequest = onCloseRequest,
+            )
+        }
     }
+}
+
+@Composable
+fun CmpProxyTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = AppColorScheme,
+        shapes = AppShapes,
+        content = content,
+    )
 }
 
 @Composable
@@ -145,3 +168,5 @@ private fun CompactAppTabs(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f))
     }
 }
+
+private const val RULES_TAB_INDEX = 1

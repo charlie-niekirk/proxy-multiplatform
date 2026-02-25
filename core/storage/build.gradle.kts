@@ -28,6 +28,7 @@ kotlin {
             implementation(libs.dev.zacsweers.metrox.viewmodel.compose)
 
             implementation(projects.core.model)
+            implementation(projects.core.rules)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

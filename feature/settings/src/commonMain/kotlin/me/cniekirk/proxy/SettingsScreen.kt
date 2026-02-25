@@ -14,10 +14,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +30,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import me.cniekirk.proxy.ui.CompactButton
+import me.cniekirk.proxy.ui.CompactButtonStyle
+import me.cniekirk.proxy.ui.CompactTextField
 import org.orbitmvi.orbit.compose.collectAsState
 
 @Composable
@@ -49,14 +50,15 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
             fontWeight = FontWeight.SemiBold,
         )
 
-        OutlinedTextField(
+        CompactTextField(
             value = portField,
             onValueChange = {
                 portField = it
                 it.toIntOrNull()?.let(settingsViewModel::updateProxyPort)
             },
-            label = { Text("Proxy port") },
+            label = "Proxy port",
             modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
         )
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -212,9 +214,11 @@ private fun CopyableUrlRow(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        TextButton(onClick = onCopy) {
-            Text("Copy")
-        }
+        CompactButton(
+            label = "Copy",
+            onClick = onCopy,
+            style = CompactButtonStyle.Text,
+        )
     }
 }
 

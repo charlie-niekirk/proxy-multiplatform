@@ -62,7 +62,78 @@ data class CapturedSession(
     val response: CapturedResponse?,
     val error: String?,
     val durationMillis: Long?,
+    val appliedRules: List<AppliedRuleTrace> = emptyList(),
 )
+
+data class AppliedRuleTrace(
+    val ruleId: String,
+    val ruleName: String,
+    val appliedToRequest: Boolean,
+    val appliedToResponse: Boolean,
+    val mutations: List<String>,
+)
+
+@Serializable
+data class RulesStore(
+    val version: Int = 1,
+    val rules: List<RuleDefinition> = emptyList(),
+)
+
+@Serializable
+data class RuleDefinition(
+    val id: String,
+    val name: String,
+    val enabled: Boolean = true,
+    val priority: Int = 100,
+    val matcher: RuleMatcher = RuleMatcher(),
+    val actions: List<RuleAction> = emptyList(),
+)
+
+@Serializable
+data class RuleMatcher(
+    val scheme: RuleMatchField = RuleMatchField(),
+    val host: RuleMatchField = RuleMatchField(),
+    val path: RuleMatchField = RuleMatchField(),
+    val port: RuleMatchField = RuleMatchField(),
+)
+
+@Serializable
+data class RuleMatchField(
+    val mode: RuleMatchMode = RuleMatchMode.ANY,
+    val value: String = "",
+)
+
+@Serializable
+enum class RuleMatchMode {
+    ANY,
+    EXACT,
+    WILDCARD,
+    REGEX,
+}
+
+@Serializable
+data class RuleAction(
+    val id: String,
+    val target: RuleTarget,
+    val type: RuleActionType,
+    val headerName: String? = null,
+    val headerValue: String? = null,
+    val bodyValue: String? = null,
+    val contentType: String? = null,
+)
+
+@Serializable
+enum class RuleTarget {
+    REQUEST,
+    RESPONSE,
+}
+
+@Serializable
+enum class RuleActionType {
+    SET_HEADER,
+    REMOVE_HEADER,
+    REPLACE_BODY,
+}
 
 fun detectCapturedBodyType(
     body: String?,

@@ -22,9 +22,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +48,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import me.cniekirk.proxy.ui.CompactButton
+import me.cniekirk.proxy.ui.CompactTextField
 
 @Composable
 internal fun JsonTreeView(
@@ -183,7 +183,7 @@ internal fun JsonTreeView(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        OutlinedTextField(
+        CompactTextField(
             value = searchText,
             onValueChange = { value ->
                 searchText = value
@@ -194,7 +194,7 @@ internal fun JsonTreeView(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             textStyle = monoTextStyle,
-            label = { Text("Find in JSON") },
+            label = "Find in JSON",
         )
 
         Row(
@@ -231,18 +231,16 @@ internal fun JsonTreeView(
                 )
             }
 
-            TextButton(
+            CompactButton(
+                label = "Find",
                 onClick = runFind,
                 enabled = searchText.isNotBlank(),
-            ) {
-                Text("Find")
-            }
-            TextButton(
+            )
+            CompactButton(
+                label = "Next",
                 onClick = runFindNext,
                 enabled = searchText.isNotBlank(),
-            ) {
-                Text("Next")
-            }
+            )
         }
 
         JsonTreeNodeRow(

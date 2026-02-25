@@ -1,7 +1,6 @@
 package me.cniekirk.proxy.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.SessionsState
+import me.cniekirk.proxy.ui.CompactButton
 
 @Composable
 internal fun SessionsToolbar(
@@ -52,7 +52,7 @@ internal fun SessionsToolbar(
             }
         }
 
-        CompactActionButton(
+        CompactButton(
             label = "Clear",
             enabled = state.sessions.isNotEmpty(),
             onClick = onClearSessions,
@@ -94,50 +94,10 @@ internal fun RuntimeErrorBanner(
                 )
             }
 
-            CompactActionButton(
+            CompactButton(
                 label = "Dismiss",
                 onClick = onDismiss,
             )
         }
-    }
-}
-
-@Composable
-internal fun CompactActionButton(
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val backgroundColor = if (enabled) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    }
-    val textColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
-    }
-
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = backgroundColor,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = if (enabled) 0.8f else 0.35f),
-        ),
-        modifier = if (enabled) {
-            Modifier.clickable(onClick = onClick)
-        } else {
-            Modifier
-        },
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-        )
     }
 }

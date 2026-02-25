@@ -37,6 +37,7 @@ kotlin {
             implementation(projects.core.model)
             implementation(projects.core.proxy)
             implementation(projects.core.storage)
+            implementation(projects.core.ui)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
