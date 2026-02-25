@@ -1,0 +1,20 @@
+<resources>
+    <string name="settings_title_proxy">Proxy Settings</string>
+    <string name="settings_label_proxy_port">Proxy port</string>
+    <string name="settings_label_enable_ssl_decryption">Enable SSL decryption</string>
+    <string name="settings_certificate_generated">Root certificate generated.</string>
+    <string name="settings_certificate_not_generated">Root certificate not generated.</string>
+    <string name="settings_certificate_fingerprint">Fingerprint (SHA-256): %1$s</string>
+    <string name="settings_certificate_onboarding_title">Certificate Onboarding</string>
+    <string name="settings_certificate_onboarding_description">Scan the QR code from a mobile device on the same network, then install and trust the root certificate.</string>
+    <string name="settings_certificate_qr_target">QR target: %1$s</string>
+    <string name="settings_certificate_qr_error">Unable to generate QR code for the current onboarding URL.</string>
+    <string name="settings_certificate_friendly_url">Friendly URL</string>
+    <string name="settings_certificate_fallback_url">LAN fallback URL</string>
+    <string name="settings_ios_trust_steps_title">iOS trust steps</string>
+    <string name="settings_ios_trust_steps_body">1. Open the URL and download/install the profile.\n2. In Settings &gt; General &gt; VPN &amp; Device Management, install it.\n3. In Settings &gt; General &gt; About &gt; Certificate Trust Settings, enable full trust.</string>
+    <string name="settings_android_trust_steps_title">Android trust steps</string>
+    <string name="settings_android_trust_steps_body">1. Open the URL and download the certificate.\n2. Go to Settings &gt; Security (or Security &amp; privacy) &gt; Encryption &amp; credentials.\n3. Install a CA certificate and select the downloaded file.</string>
+    <string name="settings_action_copy">Copy</string>
+    <string name="settings_error_certificate_generation_failed">Failed to generate certificate material.</string>
+</resources>

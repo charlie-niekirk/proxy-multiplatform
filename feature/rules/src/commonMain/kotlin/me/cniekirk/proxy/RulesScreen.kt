@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactDropdown
 import me.cniekirk.proxy.ui.CompactTextField
+import org.jetbrains.compose.resources.stringResource
 import org.orbitmvi.orbit.compose.collectAsState
+import proxy.feature.rules.generated.resources.*
 import kotlin.random.Random
 
 @Composable
@@ -50,7 +52,7 @@ fun RulesScreen(
     val state by viewModel.collectAsState()
     var selectedRuleId by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf(RuleDraft.empty()) }
-    var localValidationError by remember { mutableStateOf<String?>(null) }
+    var localValidationError by remember { mutableStateOf<RuleValidationError?>(null) }
 
     LaunchedEffect(state.rules) {
         if (state.rules.isEmpty()) {
@@ -86,14 +88,17 @@ fun RulesScreen(
         )
 
         state.actionError?.let { message ->
+            val resolvedMessage = message.ifBlank {
+                stringResource(Res.string.rules_error_generic_action_failed)
+            }
             ErrorBanner(
-                message = message,
+                message = resolvedMessage,
                 onDismiss = viewModel::clearActionError,
             )
         }
-        localValidationError?.let { message ->
+        localValidationError?.let { validationError ->
             ErrorBanner(
-                message = message,
+                message = validationError.resolveMessage(),
                 onDismiss = { localValidationError = null },
             )
         }
@@ -126,9 +131,9 @@ fun RulesScreen(
                     draft = updatedDraft
                 },
                 onSave = {
-                    val validationMessage = validateDraft(draft)
-                    if (validationMessage != null) {
-                        localValidationError = validationMessage
+                    val validationError = validateDraft(draft)
+                    if (validationError != null) {
+                        localValidationError = validationError
                         return@RuleEditorPane
                     }
 
@@ -177,12 +182,12 @@ private fun HeaderBar(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = "Rules",
+                    text = stringResource(Res.string.rules_header_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "$ruleCount configured",
+                    text = stringResource(Res.string.rules_header_configured_count, ruleCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -192,11 +197,11 @@ private fun HeaderBar(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 CompactButton(
-                    label = "New Rule",
+                    label = stringResource(Res.string.rules_action_new_rule),
                     onClick = onNewRule,
                 )
                 CompactButton(
-                    label = "Close",
+                    label = stringResource(Res.string.rules_action_close),
                     onClick = onCloseRequest,
                 )
             }
@@ -226,7 +231,7 @@ private fun RuleListPane(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "Create your first rule to start manipulating matching requests and responses.",
+                    text = stringResource(Res.string.rules_empty_message),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -256,7 +261,9 @@ private fun RuleListPane(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = rule.name.ifBlank { "(unnamed)" },
+                                text = rule.name.ifBlank {
+                                    stringResource(Res.string.rules_unnamed_rule)
+                                },
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -279,7 +286,11 @@ private fun RuleListPane(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "${rule.actions.size} action(s) • priority ${rule.priority}",
+                            text = stringResource(
+                                Res.string.rules_rule_summary,
+                                rule.actions.size,
+                                rule.priority,
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -319,14 +330,14 @@ private fun RuleEditorPane(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                SectionCard(title = "Rule Details") {
+                SectionCard(title = stringResource(Res.string.rules_section_rule_details)) {
                     CompactTextField(
                         value = draft.name,
                         onValueChange = { value ->
                             onDraftChanged(draft.copy(name = value))
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        label = "Rule name",
+                        label = stringResource(Res.string.rules_field_rule_name),
                         singleLine = true,
                     )
                     Row(
@@ -339,7 +350,7 @@ private fun RuleEditorPane(
                                 onDraftChanged(draft.copy(priorityText = value))
                             },
                             modifier = Modifier.width(120.dp),
-                            label = "Priority",
+                            label = stringResource(Res.string.rules_field_priority),
                             singleLine = true,
                         )
                         Row(
@@ -348,7 +359,7 @@ private fun RuleEditorPane(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(
-                                text = "Enabled",
+                                text = stringResource(Res.string.rules_toggle_enabled),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             Switch(
@@ -361,42 +372,42 @@ private fun RuleEditorPane(
                     }
                 }
 
-                SectionCard(title = "Matchers") {
+                SectionCard(title = stringResource(Res.string.rules_section_matchers)) {
                     MatchFieldEditor(
-                        label = "Scheme",
+                        label = stringResource(Res.string.rules_matcher_scheme),
                         field = draft.scheme,
-                        placeholder = "https",
+                        placeholder = stringResource(Res.string.rules_matcher_placeholder_scheme),
                         onChanged = { updated ->
                             onDraftChanged(draft.copy(scheme = updated))
                         },
                     )
                     MatchFieldEditor(
-                        label = "Host",
+                        label = stringResource(Res.string.rules_matcher_host),
                         field = draft.host,
-                        placeholder = "api.asos.com",
+                        placeholder = stringResource(Res.string.rules_matcher_placeholder_host),
                         onChanged = { updated ->
                             onDraftChanged(draft.copy(host = updated))
                         },
                     )
                     MatchFieldEditor(
-                        label = "Path",
+                        label = stringResource(Res.string.rules_matcher_path),
                         field = draft.path,
-                        placeholder = "/prd/*",
+                        placeholder = stringResource(Res.string.rules_matcher_placeholder_path),
                         onChanged = { updated ->
                             onDraftChanged(draft.copy(path = updated))
                         },
                     )
                     MatchFieldEditor(
-                        label = "Port",
+                        label = stringResource(Res.string.rules_matcher_port),
                         field = draft.port,
-                        placeholder = "443",
+                        placeholder = stringResource(Res.string.rules_matcher_placeholder_port),
                         onChanged = { updated ->
                             onDraftChanged(draft.copy(port = updated))
                         },
                     )
                 }
 
-                SectionCard(title = "Actions") {
+                SectionCard(title = stringResource(Res.string.rules_section_actions)) {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -426,7 +437,7 @@ private fun RuleEditorPane(
                             )
                         }
                         CompactButton(
-                            label = "Add Action",
+                            label = stringResource(Res.string.rules_action_add_action),
                             onClick = {
                                 onDraftChanged(
                                     draft.copy(actions = draft.actions + RuleActionDraft.empty()),
@@ -444,14 +455,18 @@ private fun RuleEditorPane(
             ) {
                 if (isEditingExistingRule) {
                     CompactButton(
-                        label = "Delete Rule",
+                        label = stringResource(Res.string.rules_action_delete_rule),
                         onClick = onDelete,
                     )
                 } else {
                     Box(modifier = Modifier.size(1.dp))
                 }
                 CompactButton(
-                    label = if (isEditingExistingRule) "Save Changes" else "Create Rule",
+                    label = if (isEditingExistingRule) {
+                        stringResource(Res.string.rules_action_save_changes)
+                    } else {
+                        stringResource(Res.string.rules_action_create_rule)
+                    },
                     onClick = onSave,
                 )
             }
@@ -466,6 +481,8 @@ private fun MatchFieldEditor(
     placeholder: String,
     onChanged: (RuleMatchFieldDraft) -> Unit,
 ) {
+    val modeLabels = rememberRuleMatchModeLabels()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -479,7 +496,7 @@ private fun MatchFieldEditor(
         CompactDropdown(
             selected = field.mode,
             values = RuleMatchMode.entries.toList(),
-            itemLabel = { mode -> mode.name },
+            itemLabel = { mode -> modeLabels.getValue(mode) },
             modifier = Modifier.width(120.dp),
             onSelected = { mode ->
                 onChanged(field.copy(mode = mode))
@@ -505,6 +522,16 @@ private fun ActionEditorCard(
     onChanged: (RuleActionDraft) -> Unit,
     onRemove: () -> Unit,
 ) {
+    val targetLabels = mapOf(
+        RuleTarget.REQUEST to stringResource(Res.string.rules_target_request),
+        RuleTarget.RESPONSE to stringResource(Res.string.rules_target_response),
+    )
+    val actionTypeLabels = mapOf(
+        RuleActionType.SET_HEADER to stringResource(Res.string.rules_action_type_set_header),
+        RuleActionType.REMOVE_HEADER to stringResource(Res.string.rules_action_type_remove_header),
+        RuleActionType.REPLACE_BODY to stringResource(Res.string.rules_action_type_replace_body),
+    )
+
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -522,12 +549,12 @@ private fun ActionEditorCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Action ${index + 1}",
+                    text = stringResource(Res.string.rules_action_card_title, index + 1),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
                 CompactButton(
-                    label = "Remove",
+                    label = stringResource(Res.string.rules_action_remove),
                     onClick = onRemove,
                 )
             }
@@ -538,7 +565,7 @@ private fun ActionEditorCard(
                 CompactDropdown(
                     selected = action.target,
                     values = RuleTarget.entries.toList(),
-                    itemLabel = { target -> target.name.lowercase().replaceFirstChar { it.uppercase() } },
+                    itemLabel = { target -> targetLabels.getValue(target) },
                     modifier = Modifier.width(140.dp),
                     onSelected = { target ->
                         onChanged(action.copy(target = target))
@@ -547,13 +574,7 @@ private fun ActionEditorCard(
                 CompactDropdown(
                     selected = action.type,
                     values = RuleActionType.entries.toList(),
-                    itemLabel = { type ->
-                        when (type) {
-                            RuleActionType.SET_HEADER -> "Set Header"
-                            RuleActionType.REMOVE_HEADER -> "Remove Header"
-                            RuleActionType.REPLACE_BODY -> "Replace Body"
-                        }
-                    },
+                    itemLabel = { type -> actionTypeLabels.getValue(type) },
                     modifier = Modifier.width(160.dp),
                     onSelected = { type ->
                         onChanged(action.copy(type = type))
@@ -568,7 +589,7 @@ private fun ActionEditorCard(
                         onValueChange = { value ->
                             onChanged(action.copy(headerName = value))
                         },
-                        label = "Header Name",
+                        label = stringResource(Res.string.rules_field_header_name),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
@@ -577,7 +598,7 @@ private fun ActionEditorCard(
                         onValueChange = { value ->
                             onChanged(action.copy(headerValue = value))
                         },
-                        label = "Header Value",
+                        label = stringResource(Res.string.rules_field_header_value),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
@@ -589,7 +610,7 @@ private fun ActionEditorCard(
                         onValueChange = { value ->
                             onChanged(action.copy(headerName = value))
                         },
-                        label = "Header Name",
+                        label = stringResource(Res.string.rules_field_header_name),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
@@ -601,7 +622,7 @@ private fun ActionEditorCard(
                         onValueChange = { value ->
                             onChanged(action.copy(bodyValue = value))
                         },
-                        label = "Replacement Body (UTF-8)",
+                        label = stringResource(Res.string.rules_field_replacement_body),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(130.dp),
@@ -611,7 +632,7 @@ private fun ActionEditorCard(
                         onValueChange = { value ->
                             onChanged(action.copy(contentType = value))
                         },
-                        label = "Content-Type (optional)",
+                        label = stringResource(Res.string.rules_field_content_type_optional),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
@@ -645,7 +666,7 @@ private fun ErrorBanner(
                 modifier = Modifier.weight(1f),
             )
             CompactButton(
-                label = "Dismiss",
+                label = stringResource(Res.string.rules_action_dismiss),
                 onClick = onDismiss,
             )
         }
@@ -678,30 +699,89 @@ private fun SectionCard(
     }
 }
 
-private fun validateDraft(draft: RuleDraft): String? {
+@Composable
+private fun RuleValidationError.resolveMessage(): String {
+    return when (this) {
+        RuleValidationError.NameRequired -> stringResource(Res.string.rules_validation_name_required)
+        RuleValidationError.PriorityMustBeInteger -> {
+            stringResource(Res.string.rules_validation_priority_integer)
+        }
+
+        is RuleValidationError.MatcherRequiresValue -> {
+            stringResource(
+                Res.string.rules_validation_matcher_requires_value,
+                matcherFieldLabel(field),
+            )
+        }
+
+        is RuleValidationError.MatcherInvalidRegex -> {
+            stringResource(
+                Res.string.rules_validation_matcher_invalid_regex,
+                matcherFieldLabel(field),
+            )
+        }
+
+        RuleValidationError.PortExactOutOfRange -> stringResource(Res.string.rules_validation_port_range)
+        RuleValidationError.AtLeastOneActionRequired -> stringResource(Res.string.rules_validation_add_action)
+        is RuleValidationError.ActionHeaderNameRequired -> {
+            stringResource(
+                Res.string.rules_validation_action_header_required,
+                actionNumber,
+            )
+        }
+    }
+}
+
+@Composable
+private fun matcherFieldLabel(field: RuleMatcherFieldKey): String {
+    return when (field) {
+        RuleMatcherFieldKey.Scheme -> stringResource(Res.string.rules_matcher_scheme)
+        RuleMatcherFieldKey.Host -> stringResource(Res.string.rules_matcher_host)
+        RuleMatcherFieldKey.Path -> stringResource(Res.string.rules_matcher_path)
+        RuleMatcherFieldKey.Port -> stringResource(Res.string.rules_matcher_port)
+    }
+}
+
+@Composable
+private fun rememberRuleMatchModeLabels(): Map<RuleMatchMode, String> {
+    val any = stringResource(Res.string.rules_matcher_mode_any)
+    val exact = stringResource(Res.string.rules_matcher_mode_exact)
+    val wildcard = stringResource(Res.string.rules_matcher_mode_wildcard)
+    val regex = stringResource(Res.string.rules_matcher_mode_regex)
+    return remember(any, exact, wildcard, regex) {
+        mapOf(
+            RuleMatchMode.ANY to any,
+            RuleMatchMode.EXACT to exact,
+            RuleMatchMode.WILDCARD to wildcard,
+            RuleMatchMode.REGEX to regex,
+        )
+    }
+}
+
+private fun validateDraft(draft: RuleDraft): RuleValidationError? {
     if (draft.name.isBlank()) {
-        return "Rule name is required."
+        return RuleValidationError.NameRequired
     }
 
     val priority = draft.priorityText.toIntOrNull()
     if (priority == null) {
-        return "Priority must be an integer."
+        return RuleValidationError.PriorityMustBeInteger
     }
 
     val matcherFields = listOf(
-        "scheme" to draft.scheme,
-        "host" to draft.host,
-        "path" to draft.path,
-        "port" to draft.port,
+        RuleMatcherFieldKey.Scheme to draft.scheme,
+        RuleMatcherFieldKey.Host to draft.host,
+        RuleMatcherFieldKey.Path to draft.path,
+        RuleMatcherFieldKey.Port to draft.port,
     )
-    matcherFields.forEach { (label, field) ->
+    matcherFields.forEach { (fieldKey, field) ->
         if (field.mode != RuleMatchMode.ANY && field.value.isBlank()) {
-            return "Matcher \"$label\" requires a value."
+            return RuleValidationError.MatcherRequiresValue(fieldKey)
         }
         if (field.mode == RuleMatchMode.REGEX && field.value.isNotBlank()) {
             val isValidRegex = runCatching { Regex(field.value) }.isSuccess
             if (!isValidRegex) {
-                return "Matcher \"$label\" contains an invalid regex."
+                return RuleValidationError.MatcherInvalidRegex(fieldKey)
             }
         }
     }
@@ -709,25 +789,21 @@ private fun validateDraft(draft: RuleDraft): String? {
     if (draft.port.mode == RuleMatchMode.EXACT && draft.port.value.isNotBlank()) {
         val port = draft.port.value.toIntOrNull()
         if (port == null || port !in 1..65535) {
-            return "Port matcher in exact mode must be 1-65535."
+            return RuleValidationError.PortExactOutOfRange
         }
     }
 
     if (draft.actions.isEmpty()) {
-        return "Add at least one action."
+        return RuleValidationError.AtLeastOneActionRequired
     }
 
     draft.actions.forEachIndexed { index, action ->
         when (action.type) {
-            RuleActionType.SET_HEADER -> {
+            RuleActionType.SET_HEADER,
+            RuleActionType.REMOVE_HEADER,
+            -> {
                 if (action.headerName.isBlank()) {
-                    return "Action ${index + 1}: header name is required."
-                }
-            }
-
-            RuleActionType.REMOVE_HEADER -> {
-                if (action.headerName.isBlank()) {
-                    return "Action ${index + 1}: header name is required."
+                    return RuleValidationError.ActionHeaderNameRequired(actionNumber = index + 1)
                 }
             }
 
@@ -740,23 +816,70 @@ private fun validateDraft(draft: RuleDraft): String? {
     return null
 }
 
+@Composable
 private fun describeRuleMatcher(matcher: RuleMatcher): String {
+    val anyLabel = stringResource(Res.string.rules_matcher_summary_any)
+    val modeLabels = rememberRuleMatchModeLabels()
+
     return buildString {
-        append(describeField(label = "scheme", matcher.scheme))
+        append(
+            describeField(
+                label = stringResource(Res.string.rules_matcher_scheme),
+                field = matcher.scheme,
+                anyLabel = anyLabel,
+                modeLabels = modeLabels,
+            ),
+        )
         append(" • ")
-        append(describeField(label = "host", matcher.host))
+        append(
+            describeField(
+                label = stringResource(Res.string.rules_matcher_host),
+                field = matcher.host,
+                anyLabel = anyLabel,
+                modeLabels = modeLabels,
+            ),
+        )
         append(" • ")
-        append(describeField(label = "path", matcher.path))
+        append(
+            describeField(
+                label = stringResource(Res.string.rules_matcher_path),
+                field = matcher.path,
+                anyLabel = anyLabel,
+                modeLabels = modeLabels,
+            ),
+        )
         append(" • ")
-        append(describeField(label = "port", matcher.port))
+        append(
+            describeField(
+                label = stringResource(Res.string.rules_matcher_port),
+                field = matcher.port,
+                anyLabel = anyLabel,
+                modeLabels = modeLabels,
+            ),
+        )
     }
 }
 
-private fun describeField(label: String, field: RuleMatchField): String {
+@Composable
+private fun describeField(
+    label: String,
+    field: RuleMatchField,
+    anyLabel: String,
+    modeLabels: Map<RuleMatchMode, String>,
+): String {
     return if (field.mode == RuleMatchMode.ANY) {
-        "$label:any"
+        stringResource(
+            Res.string.rules_matcher_summary_any_field,
+            label,
+            anyLabel,
+        )
     } else {
-        "$label:${field.mode.name.lowercase()}(${field.value})"
+        stringResource(
+            Res.string.rules_matcher_summary_field_value,
+            label,
+            modeLabels.getValue(field.mode),
+            field.value,
+        )
     }
 }
 
@@ -772,6 +895,23 @@ private fun generateRuleId(): String {
 
 private fun generateActionId(): String {
     return "action-${Random.nextLong().toString(16)}"
+}
+
+private enum class RuleMatcherFieldKey {
+    Scheme,
+    Host,
+    Path,
+    Port,
+}
+
+private sealed interface RuleValidationError {
+    data object NameRequired : RuleValidationError
+    data object PriorityMustBeInteger : RuleValidationError
+    data class MatcherRequiresValue(val field: RuleMatcherFieldKey) : RuleValidationError
+    data class MatcherInvalidRegex(val field: RuleMatcherFieldKey) : RuleValidationError
+    data object PortExactOutOfRange : RuleValidationError
+    data object AtLeastOneActionRequired : RuleValidationError
+    data class ActionHeaderNameRequired(val actionNumber: Int) : RuleValidationError
 }
 
 private data class RuleDraft(

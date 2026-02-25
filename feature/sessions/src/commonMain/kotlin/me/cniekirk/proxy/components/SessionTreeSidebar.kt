@@ -43,6 +43,9 @@ import me.cniekirk.proxy.SessionHostPathTree
 import me.cniekirk.proxy.SessionHostTree
 import me.cniekirk.proxy.SessionPathTree
 import me.cniekirk.proxy.SessionTreeFilter
+import me.cniekirk.proxy.UnknownSessionHost
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 private val FlashColor = Color(0xFF22C55E)
 
@@ -65,7 +68,7 @@ internal fun SessionTreeSidebar(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Text(
-                text = "Hosts & Paths",
+                text = stringResource(Res.string.sessions_sidebar_title),
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
@@ -78,7 +81,7 @@ internal fun SessionTreeSidebar(
             ) {
                 item {
                     SessionTreeNodeRow(
-                        label = "All",
+                        label = stringResource(Res.string.sessions_filter_all),
                         count = totalCount,
                         depth = 0,
                         hasChildren = false,
@@ -120,8 +123,13 @@ private fun SessionHostNode(
     onNodeToggled: (String) -> Unit,
 ) {
     val isExpanded = host.key in expandedNodeKeys
+    val hostLabel = if (host.host == UnknownSessionHost) {
+        stringResource(Res.string.sessions_unknown_host)
+    } else {
+        host.host
+    }
     SessionTreeNodeRow(
-        label = host.host,
+        label = hostLabel,
         count = host.count,
         depth = 0,
         hasChildren = host.children.isNotEmpty(),

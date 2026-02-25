@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import dev.zacsweers.metrox.viewmodel.LocalMetroViewModelFactory
 import dev.zacsweers.metrox.viewmodel.MetroViewModelFactory
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import org.jetbrains.compose.resources.stringResource
+import proxy.composeapp.generated.resources.*
 
 private val AppColorScheme = lightColorScheme(
     primary = Color(0xFF2963C2),
@@ -53,7 +55,11 @@ fun AppEntryPoint(
     onOpenRulesWindow: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Sessions", "Rules", "Settings")
+    val tabs = listOf(
+        stringResource(Res.string.app_tab_sessions),
+        stringResource(Res.string.app_tab_rules),
+        stringResource(Res.string.app_tab_settings),
+    )
 
     CompositionLocalProvider(LocalMetroViewModelFactory provides metroViewModelFactory) {
         CmpProxyTheme {

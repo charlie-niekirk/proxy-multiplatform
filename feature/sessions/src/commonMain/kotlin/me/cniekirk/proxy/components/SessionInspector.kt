@@ -41,6 +41,8 @@ import me.cniekirk.proxy.CapturedBodyType
 import me.cniekirk.proxy.CapturedSession
 import me.cniekirk.proxy.HeaderEntry
 import me.cniekirk.proxy.JsonTreeView
+import org.jetbrains.compose.resources.stringResource
+import proxy.feature.sessions.generated.resources.*
 
 @Composable
 internal fun SessionInspector(
@@ -63,7 +65,7 @@ internal fun SessionInspector(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "Select a captured request to inspect request and response details.",
+                    text = stringResource(Res.string.sessions_inspector_empty),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -122,8 +124,8 @@ private fun SessionSummaryBar(
     val response = session.response
     val statusLabel = when {
         response != null -> responseCodeText(response)
-        session.error != null -> "Error"
-        else -> "Pending"
+        session.error != null -> stringResource(Res.string.sessions_status_error)
+        else -> stringResource(Res.string.sessions_status_pending)
     }
     val neutralBadgeContainer = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
     val neutralBadgeText = MaterialTheme.colorScheme.onSurfaceVariant
@@ -201,8 +203,12 @@ private fun RequestDetailPane(
     modifier: Modifier = Modifier,
 ) {
     DetailPane(
-        title = "Request",
-        subtitle = "${session.request.method} ${session.request.url}",
+        title = stringResource(Res.string.sessions_request_title),
+        subtitle = stringResource(
+            Res.string.sessions_request_subtitle,
+            session.request.method,
+            session.request.url,
+        ),
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
         modifier = modifier,
@@ -210,17 +216,35 @@ private fun RequestDetailPane(
         when (tab) {
             SessionDetailTab.Overview -> {
                 val entries = buildList {
-                    add("Method" to session.request.method)
-                    add("URL" to session.request.url)
-                    add("Captured (UTC)" to formatCapturedTimeUtc(session.request.timestampEpochMillis))
-                    add("Body Type" to session.request.bodyType.name)
-                    add("Body Size" to formatBytes(session.request.bodySizeBytes))
-                    add("Headers" to session.request.headers.size.toString())
+                    add(stringResource(Res.string.sessions_metadata_method) to session.request.method)
+                    add(stringResource(Res.string.sessions_metadata_url) to session.request.url)
+                    add(
+                        stringResource(Res.string.sessions_metadata_captured_utc) to
+                            formatCapturedTimeUtc(session.request.timestampEpochMillis),
+                    )
+                    add(stringResource(Res.string.sessions_metadata_body_type) to session.request.bodyType.name)
+                    add(
+                        stringResource(Res.string.sessions_metadata_body_size) to
+                            formatBytes(session.request.bodySizeBytes),
+                    )
+                    add(
+                        stringResource(Res.string.sessions_metadata_headers) to
+                            session.request.headers.size.toString(),
+                    )
 
                     val requestRuleCount = session.appliedRules.count { trace -> trace.appliedToRequest }
-                    add("Applied Request Rules" to requestRuleCount.toString())
+                    add(
+                        stringResource(Res.string.sessions_metadata_applied_request_rules) to
+                            requestRuleCount.toString(),
+                    )
                     if (requestRuleCount > 0) {
-                        add("Request Rule Trace" to formatAppliedRuleTrace(session.appliedRules, requestScope = true))
+                        add(
+                            stringResource(Res.string.sessions_metadata_request_rule_trace) to
+                                formatAppliedRuleTrace(
+                                    traces = session.appliedRules,
+                                    requestScope = true,
+                                ),
+                        )
                     }
                 }
                 MetadataTable(entries = entries)
@@ -246,8 +270,9 @@ private fun ResponseDetailPane(
 ) {
     val response = session.response
     DetailPane(
-        title = "Response",
-        subtitle = response?.let(::responseCodeText) ?: "No response captured",
+        title = stringResource(Res.string.sessions_response_title),
+        subtitle = response?.let { capturedResponse -> responseCodeText(capturedResponse) }
+            ?: stringResource(Res.string.sessions_response_no_response_subtitle),
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
         modifier = modifier,
@@ -256,15 +281,20 @@ private fun ResponseDetailPane(
             when (tab) {
                 SessionDetailTab.Overview -> {
                     val entries = buildList {
-                        add("Status" to "Pending")
-                        session.error?.let { add("Error" to it) }
+                        add(
+                            stringResource(Res.string.sessions_metadata_status) to
+                                stringResource(Res.string.sessions_status_pending),
+                        )
+                        session.error?.let {
+                            add(stringResource(Res.string.sessions_metadata_error) to it)
+                        }
                     }
                     MetadataTable(entries)
                 }
 
                 SessionDetailTab.Headers,
                 SessionDetailTab.Body,
-                -> Text("No upstream response was captured.")
+                -> Text(stringResource(Res.string.sessions_no_upstream_response))
             }
             return@DetailPane
         }
@@ -272,18 +302,44 @@ private fun ResponseDetailPane(
         when (tab) {
             SessionDetailTab.Overview -> {
                 val entries = buildList {
-                    add("Status" to responseCodeText(response))
-                    add("Captured (UTC)" to formatCapturedTimeUtc(response.timestampEpochMillis))
-                    add("Duration" to formatDuration(session.durationMillis))
-                    add("Body Type" to response.bodyType.name)
-                    add("Body Size" to formatBytes(response.bodySizeBytes))
-                    add("Headers" to response.headers.size.toString())
+                    add(
+                        stringResource(Res.string.sessions_metadata_status) to
+                            responseCodeText(response),
+                    )
+                    add(
+                        stringResource(Res.string.sessions_metadata_captured_utc) to
+                            formatCapturedTimeUtc(response.timestampEpochMillis),
+                    )
+                    add(
+                        stringResource(Res.string.sessions_metadata_duration) to
+                            formatDuration(session.durationMillis),
+                    )
+                    add(stringResource(Res.string.sessions_metadata_body_type) to response.bodyType.name)
+                    add(
+                        stringResource(Res.string.sessions_metadata_body_size) to
+                            formatBytes(response.bodySizeBytes),
+                    )
+                    add(
+                        stringResource(Res.string.sessions_metadata_headers) to
+                            response.headers.size.toString(),
+                    )
                     val responseRuleCount = session.appliedRules.count { trace -> trace.appliedToResponse }
-                    add("Applied Response Rules" to responseRuleCount.toString())
+                    add(
+                        stringResource(Res.string.sessions_metadata_applied_response_rules) to
+                            responseRuleCount.toString(),
+                    )
                     if (responseRuleCount > 0) {
-                        add("Response Rule Trace" to formatAppliedRuleTrace(session.appliedRules, requestScope = false))
+                        add(
+                            stringResource(Res.string.sessions_metadata_response_rule_trace) to
+                                formatAppliedRuleTrace(
+                                    traces = session.appliedRules,
+                                    requestScope = false,
+                                ),
+                        )
                     }
-                    session.error?.let { add("Warning" to it) }
+                    session.error?.let {
+                        add(stringResource(Res.string.sessions_metadata_warning) to it)
+                    }
                 }
                 MetadataTable(entries = entries)
             }
@@ -380,7 +436,7 @@ private fun CompactTabStrip(
                 modifier = Modifier.clickable { onTabSelected(tab) },
             ) {
                 Text(
-                    text = tab.title,
+                    text = sessionDetailTabTitle(tab),
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
@@ -396,9 +452,18 @@ private fun CompactTabStrip(
 }
 
 @Composable
+private fun sessionDetailTabTitle(tab: SessionDetailTab): String {
+    return when (tab) {
+        SessionDetailTab.Overview -> stringResource(Res.string.sessions_detail_tab_overview)
+        SessionDetailTab.Headers -> stringResource(Res.string.sessions_detail_tab_headers)
+        SessionDetailTab.Body -> stringResource(Res.string.sessions_detail_tab_body)
+    }
+}
+
+@Composable
 private fun MetadataTable(entries: List<Pair<String, String>>) {
     if (entries.isEmpty()) {
-        Text("No metadata")
+        Text(stringResource(Res.string.sessions_table_no_metadata))
         return
     }
 
@@ -416,14 +481,14 @@ private fun MetadataTable(entries: List<Pair<String, String>>) {
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
                 Text(
-                    text = "Key",
+                    text = stringResource(Res.string.sessions_table_key),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "Value",
+                    text = stringResource(Res.string.sessions_table_value),
                     modifier = Modifier.weight(2f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
@@ -463,7 +528,7 @@ private fun MetadataTable(entries: List<Pair<String, String>>) {
 @Composable
 private fun HeaderTable(headers: List<HeaderEntry>) {
     if (headers.isEmpty()) {
-        Text("No headers")
+        Text(stringResource(Res.string.sessions_table_no_headers))
         return
     }
 
@@ -481,14 +546,14 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
                 Text(
-                    text = "Header",
+                    text = stringResource(Res.string.sessions_table_header_name),
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "Value",
+                    text = stringResource(Res.string.sessions_table_value),
                     modifier = Modifier.weight(2f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
@@ -525,20 +590,29 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
     }
 }
 
+@Composable
 private fun formatAppliedRuleTrace(
     traces: List<AppliedRuleTrace>,
     requestScope: Boolean,
 ): String {
+    val emptyLabel = stringResource(Res.string.sessions_metadata_none)
+    val emptyMutationLabel = stringResource(Res.string.sessions_metadata_matched_without_details)
+    val traceEntryTemplate = stringResource(
+        Res.string.sessions_rule_trace_entry,
+        "%1\$s",
+        "%2\$s",
+    )
+
     val scopedTraces = traces.filter { trace ->
         if (requestScope) trace.appliedToRequest else trace.appliedToResponse
     }
     if (scopedTraces.isEmpty()) {
-        return "None"
+        return emptyLabel
     }
     return scopedTraces.joinToString(separator = "\n") { trace ->
         val mutationSummary = trace.mutations.joinToString(separator = ", ")
-            .ifBlank { "matched without action details" }
-        "${trace.ruleName}: $mutationSummary"
+            .ifBlank { emptyMutationLabel }
+        traceEntryTemplate.format(trace.ruleName, mutationSummary)
     }
 }
 
@@ -553,7 +627,7 @@ private fun BodyBlock(
             model = ImageRequest.Builder(LocalPlatformContext.current)
                 .data(imageBytes)
                 .build(),
-            contentDescription = "Captured response image",
+            contentDescription = stringResource(Res.string.sessions_content_description_response_image),
             contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxWidth()
@@ -563,7 +637,7 @@ private fun BodyBlock(
     }
 
     if (body.isNullOrBlank()) {
-        Text("No body")
+        Text(stringResource(Res.string.sessions_table_no_body))
         return
     }
 

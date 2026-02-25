@@ -69,7 +69,7 @@ class SessionsViewModel(
                     state.copy(
                         listeningAddress = listeningAddress,
                         isListening = false,
-                        runtimeError = error.message ?: "Failed to start proxy runtime",
+                        runtimeError = error.message.orEmpty(),
                     )
                 }
             }

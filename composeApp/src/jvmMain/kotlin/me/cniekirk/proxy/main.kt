@@ -11,6 +11,8 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.cmp.proxy.app.di.CmpProxyAppGraph
 import dev.zacsweers.metro.createGraph
+import org.jetbrains.compose.resources.stringResource
+import proxy.composeapp.generated.resources.*
 
 fun main() = application {
     val appGraph = remember { createGraph<CmpProxyAppGraph>() }
@@ -18,7 +20,7 @@ fun main() = application {
 
     Window(
         onCloseRequest = ::exitApplication,
-        title = "CMP Proxy",
+        title = stringResource(Res.string.app_window_title_main),
         state = rememberWindowState(size = DpSize(width = 1420.dp, height = 860.dp)),
     ) {
         AppEntryPoint(
@@ -30,7 +32,7 @@ fun main() = application {
     if (isRulesWindowOpen) {
         Window(
             onCloseRequest = { isRulesWindowOpen = false },
-            title = "CMP Proxy Rules",
+            title = stringResource(Res.string.app_window_title_rules),
             state = rememberWindowState(size = DpSize(width = 1260.dp, height = 860.dp)),
         ) {
             RulesWindowEntryPoint(

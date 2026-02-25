@@ -6,7 +6,6 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.binding
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
-import kotlinx.coroutines.flow.collect
 import org.orbitmvi.orbit.ContainerHost
 import org.orbitmvi.orbit.viewmodel.container
 
@@ -25,7 +24,7 @@ class RulesViewModel(
         runCatching {
             ruleRepository.upsertRule(rule)
         }.onFailure { error ->
-            reduce { state.copy(actionError = error.message ?: "Failed to save rule.") }
+            reduce { state.copy(actionError = error.message.orEmpty()) }
         }
     }
 
@@ -33,7 +32,7 @@ class RulesViewModel(
         runCatching {
             ruleRepository.deleteRule(ruleId)
         }.onFailure { error ->
-            reduce { state.copy(actionError = error.message ?: "Failed to delete rule.") }
+            reduce { state.copy(actionError = error.message.orEmpty()) }
         }
     }
 
@@ -49,7 +48,7 @@ class RulesViewModel(
                 }
             }
         }.onFailure { error ->
-            reduce { state.copy(actionError = error.message ?: "Failed to update rule state.") }
+            reduce { state.copy(actionError = error.message.orEmpty()) }
         }
     }
 
