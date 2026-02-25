@@ -19,6 +19,7 @@ class SessionsViewModel(
     private val sessionRepository: SessionRepository,
     private val proxyRuntimeService: ProxyRuntimeService,
     private val settingsRepository: SettingsRepository,
+    private val networkAddressRepository: NetworkAddressRepository,
 ) : ViewModel(), ContainerHost<SessionsState, Nothing> {
 
     override val container = container<SessionsState, Nothing>(SessionsState()) {
@@ -47,7 +48,12 @@ class SessionsViewModel(
 
     private fun startProxyRuntime() = intent {
         val proxySettings = settingsRepository.settings.first().proxy
-        val listeningAddress = "${proxySettings.host}:${proxySettings.port}"
+        val displayHost = if (proxySettings.host in WILDCARD_PROXY_HOSTS) {
+            networkAddressRepository.detectPrimaryLanIpv4Address() ?: proxySettings.host
+        } else {
+            proxySettings.host
+        }
+        val listeningAddress = "$displayHost:${proxySettings.port}"
         runCatching { proxyRuntimeService.start() }
             .onSuccess {
                 reduce {
@@ -82,5 +88,9 @@ class SessionsViewModel(
                 )
             }
         }
+    }
+
+    private companion object {
+        val WILDCARD_PROXY_HOSTS = setOf("0.0.0.0", "::")
     }
 }
