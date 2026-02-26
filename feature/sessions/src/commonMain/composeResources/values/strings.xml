@@ -24,6 +24,7 @@
     <string name="sessions_status_pending">Pending</string>
     <string name="sessions_detail_tab_overview">Overview</string>
     <string name="sessions_detail_tab_headers">Headers</string>
+    <string name="sessions_detail_tab_cookies">Cookies</string>
     <string name="sessions_detail_tab_body">Body</string>
     <string name="sessions_inspector_empty">Select a captured request to inspect request and response details.</string>
     <string name="sessions_request_title">Request</string>
@@ -50,6 +51,14 @@
     <string name="sessions_table_value">Value</string>
     <string name="sessions_table_no_headers">No headers</string>
     <string name="sessions_table_header_name">Header</string>
+    <string name="sessions_table_no_request_cookies">No request cookies</string>
+    <string name="sessions_table_no_set_cookies">No Set-Cookie headers</string>
+    <string name="sessions_table_cookie_name">Cookie</string>
+    <string name="sessions_table_cookie_value">Value</string>
+    <string name="sessions_table_cookie_attributes">Attributes</string>
+    <string name="sessions_cookie_action_copy_name">Copy cookie name</string>
+    <string name="sessions_cookie_action_copy_value">Copy cookie value</string>
+    <string name="sessions_cookie_action_copy_attributes">Copy cookie attributes</string>
     <string name="sessions_metadata_none">None</string>
     <string name="sessions_metadata_matched_without_details">matched without action details</string>
     <string name="sessions_rule_trace_entry">%1$s: %2$s</string>

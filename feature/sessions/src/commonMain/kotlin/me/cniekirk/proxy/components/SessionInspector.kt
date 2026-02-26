@@ -1,6 +1,8 @@
 package me.cniekirk.proxy.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -251,6 +255,7 @@ private fun RequestDetailPane(
             }
 
             SessionDetailTab.Headers -> HeaderTable(session.request.headers)
+            SessionDetailTab.Cookies -> RequestCookieTable(session.request.headers)
             SessionDetailTab.Body -> {
                 BodyBlock(
                     body = session.request.body,
@@ -293,6 +298,7 @@ private fun ResponseDetailPane(
                 }
 
                 SessionDetailTab.Headers,
+                SessionDetailTab.Cookies,
                 SessionDetailTab.Body,
                 -> Text(stringResource(Res.string.sessions_no_upstream_response))
             }
@@ -345,6 +351,7 @@ private fun ResponseDetailPane(
             }
 
             SessionDetailTab.Headers -> HeaderTable(response.headers)
+            SessionDetailTab.Cookies -> SetCookieTable(response.headers)
             SessionDetailTab.Body -> {
                 BodyBlock(
                     body = response.body,
@@ -456,6 +463,7 @@ private fun sessionDetailTabTitle(tab: SessionDetailTab): String {
     return when (tab) {
         SessionDetailTab.Overview -> stringResource(Res.string.sessions_detail_tab_overview)
         SessionDetailTab.Headers -> stringResource(Res.string.sessions_detail_tab_headers)
+        SessionDetailTab.Cookies -> stringResource(Res.string.sessions_detail_tab_cookies)
         SessionDetailTab.Body -> stringResource(Res.string.sessions_detail_tab_body)
     }
 }
@@ -588,6 +596,280 @@ private fun HeaderTable(headers: List<HeaderEntry>) {
             }
         }
     }
+}
+
+@Composable
+private fun RequestCookieTable(headers: List<HeaderEntry>) {
+    val cookies = parseRequestCookies(headers)
+    if (cookies.isEmpty()) {
+        Text(stringResource(Res.string.sessions_table_no_request_cookies))
+        return
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.sessions_table_cookie_name),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_table_cookie_value),
+                    modifier = Modifier.weight(2f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            cookies.forEachIndexed { index, cookie ->
+                val rowColor = if (index % 2 == 0) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+                }
+                CookieContextMenuArea(
+                    name = cookie.name,
+                    value = cookie.value,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(rowColor)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = cookie.name,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = cookie.value,
+                            modifier = Modifier.weight(2f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetCookieTable(headers: List<HeaderEntry>) {
+    val setCookies = parseSetCookies(headers)
+    if (setCookies.isEmpty()) {
+        Text(stringResource(Res.string.sessions_table_no_set_cookies))
+        return
+    }
+    val noAttributes = stringResource(Res.string.sessions_metadata_none)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.sessions_table_cookie_name),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_table_cookie_value),
+                    modifier = Modifier.weight(1.2f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_table_cookie_attributes),
+                    modifier = Modifier.weight(1.8f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            setCookies.forEachIndexed { index, cookie ->
+                val rowColor = if (index % 2 == 0) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+                }
+                CookieContextMenuArea(
+                    name = cookie.name,
+                    value = cookie.value,
+                    attributes = cookie.attributes,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(rowColor)
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = cookie.name,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = cookie.value,
+                            modifier = Modifier.weight(1.2f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = cookie.attributes.ifBlank { noAttributes },
+                            modifier = Modifier.weight(1.8f),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@Suppress("DEPRECATION")
+private fun CookieContextMenuArea(
+    name: String,
+    value: String,
+    attributes: String? = null,
+    content: @Composable () -> Unit,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val copyNameLabel = stringResource(Res.string.sessions_cookie_action_copy_name)
+    val copyValueLabel = stringResource(Res.string.sessions_cookie_action_copy_value)
+    val copyAttributesLabel = stringResource(Res.string.sessions_cookie_action_copy_attributes)
+
+    ContextMenuArea(
+        items = {
+            buildList {
+                add(
+                    ContextMenuItem(copyNameLabel) {
+                        clipboardManager.setText(AnnotatedString(name))
+                    },
+                )
+                add(
+                    ContextMenuItem(copyValueLabel) {
+                        clipboardManager.setText(AnnotatedString(value))
+                    },
+                )
+                if (attributes != null) {
+                    add(
+                        ContextMenuItem(copyAttributesLabel) {
+                            clipboardManager.setText(AnnotatedString(attributes))
+                        },
+                    )
+                }
+            }
+        },
+    ) {
+        content()
+    }
+}
+
+private data class RequestCookieEntry(
+    val name: String,
+    val value: String,
+)
+
+private data class SetCookieEntry(
+    val name: String,
+    val value: String,
+    val attributes: String,
+)
+
+private fun parseRequestCookies(headers: List<HeaderEntry>): List<RequestCookieEntry> {
+    return headers.asSequence()
+        .filter { header -> header.name.equals("Cookie", ignoreCase = true) }
+        .flatMap { header ->
+            header.value.split(';')
+                .asSequence()
+                .mapNotNull { cookiePair ->
+                    val pair = cookiePair.trim()
+                    if (pair.isEmpty()) {
+                        return@mapNotNull null
+                    }
+                    val separatorIndex = pair.indexOf('=')
+                    if (separatorIndex < 0) {
+                        return@mapNotNull RequestCookieEntry(name = pair, value = "")
+                    }
+                    val name = pair.substring(0, separatorIndex).trim()
+                    if (name.isEmpty()) {
+                        return@mapNotNull null
+                    }
+                    RequestCookieEntry(
+                        name = name,
+                        value = pair.substring(separatorIndex + 1).trim(),
+                    )
+                }
+        }
+        .toList()
+}
+
+private fun parseSetCookies(headers: List<HeaderEntry>): List<SetCookieEntry> {
+    return headers.asSequence()
+        .filter { header -> header.name.equals("Set-Cookie", ignoreCase = true) }
+        .mapNotNull { header ->
+            val parts = header.value.split(';')
+                .map { part -> part.trim() }
+                .filter { part -> part.isNotEmpty() }
+            if (parts.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            val cookiePair = parts.first()
+            val separatorIndex = cookiePair.indexOf('=')
+            val name = if (separatorIndex >= 0) {
+                cookiePair.substring(0, separatorIndex).trim()
+            } else {
+                cookiePair
+            }
+            if (name.isEmpty()) {
+                return@mapNotNull null
+            }
+            val value = if (separatorIndex >= 0) {
+                cookiePair.substring(separatorIndex + 1).trim()
+            } else {
+                ""
+            }
+            SetCookieEntry(
+                name = name,
+                value = value,
+                attributes = parts.drop(1).joinToString(separator = "; "),
+            )
+        }
+        .toList()
 }
 
 @Composable

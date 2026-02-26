@@ -14,7 +14,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactButtonStyle
+import me.cniekirk.proxy.ui.CompactSwitch
 import me.cniekirk.proxy.ui.CompactTextField
 import org.jetbrains.compose.resources.stringResource
 import org.orbitmvi.orbit.compose.collectAsState
@@ -65,7 +65,7 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(Res.string.settings_label_enable_ssl_decryption))
-            Switch(
+            CompactSwitch(
                 checked = state.settings.proxy.sslDecryptionEnabled,
                 enabled = !state.isProvisioningCertificate,
                 onCheckedChange = settingsViewModel::toggleSslDecryption,
