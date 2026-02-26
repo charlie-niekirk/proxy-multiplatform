@@ -22,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactDropdown
+import me.cniekirk.proxy.ui.CompactSwitch
 import me.cniekirk.proxy.ui.CompactTextField
 import org.jetbrains.compose.resources.stringResource
 import org.orbitmvi.orbit.compose.collectAsState
@@ -270,12 +270,11 @@ private fun RuleListPane(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
-                            Switch(
+                            CompactSwitch(
                                 checked = rule.enabled,
                                 onCheckedChange = { enabled ->
                                     onToggleRule(rule.id, enabled)
                                 },
-                                modifier = Modifier.size(32.dp),
                             )
                         }
                         Text(
@@ -362,7 +361,7 @@ private fun RuleEditorPane(
                                 text = stringResource(Res.string.rules_toggle_enabled),
                                 style = MaterialTheme.typography.bodySmall,
                             )
-                            Switch(
+                            CompactSwitch(
                                 checked = draft.enabled,
                                 onCheckedChange = { value ->
                                     onDraftChanged(draft.copy(enabled = value))
