@@ -5,4 +5,5 @@ internal enum class SessionDetailTab {
     Headers,
     Cookies,
     Body,
+    Websocket,
 }

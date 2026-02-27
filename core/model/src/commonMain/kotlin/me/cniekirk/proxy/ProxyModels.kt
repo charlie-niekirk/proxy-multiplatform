@@ -56,6 +56,28 @@ data class CapturedResponse(
     val timestampEpochMillis: Long,
 )
 
+enum class WebSocketDirection {
+    ClientToServer,
+    ServerToClient,
+}
+
+enum class WebSocketOpcode {
+    Continuation,
+    Text,
+    Binary,
+    Close,
+    Ping,
+    Pong,
+}
+
+data class WebSocketMessage(
+    val direction: WebSocketDirection,
+    val opcode: WebSocketOpcode,
+    val payloadText: String,
+    val payloadSizeBytes: Int,
+    val timestampEpochMillis: Long,
+)
+
 data class CapturedSession(
     val id: String,
     val request: CapturedRequest,
@@ -63,6 +85,7 @@ data class CapturedSession(
     val error: String?,
     val durationMillis: Long?,
     val appliedRules: List<AppliedRuleTrace> = emptyList(),
+    val webSocketMessages: List<WebSocketMessage> = emptyList(),
 )
 
 data class AppliedRuleTrace(
