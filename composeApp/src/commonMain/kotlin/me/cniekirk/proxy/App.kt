@@ -53,6 +53,7 @@ private val AppShapes = Shapes(
 fun AppEntryPoint(
     metroViewModelFactory: MetroViewModelFactory,
     onOpenRulesWindow: () -> Unit,
+    onOpenSettingsWindow: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf(
@@ -72,10 +73,10 @@ fun AppEntryPoint(
                     tabs = tabs,
                     selectedTab = selectedTab,
                     onTabSelected = { tabIndex ->
-                        if (tabIndex == RULES_TAB_INDEX) {
-                            onOpenRulesWindow()
-                        } else {
-                            selectedTab = tabIndex
+                        when (tabIndex) {
+                            RULES_TAB_INDEX -> onOpenRulesWindow()
+                            SETTINGS_TAB_INDEX -> onOpenSettingsWindow()
+                            else -> selectedTab = tabIndex
                         }
                     },
                 )
@@ -84,10 +85,6 @@ fun AppEntryPoint(
                     0 -> {
                         val viewModel = metroViewModel<SessionsViewModel>()
                         SessionsScreen(viewModel)
-                    }
-                    else -> {
-                        val viewModel = metroViewModel<SettingsViewModel>()
-                        SettingsScreen(viewModel)
                     }
                 }
             }
@@ -107,6 +104,18 @@ fun RulesWindowEntryPoint(
                 viewModel = viewModel,
                 onCloseRequest = onCloseRequest,
             )
+        }
+    }
+}
+
+@Composable
+fun SettingsWindowEntryPoint(
+    metroViewModelFactory: MetroViewModelFactory,
+) {
+    CompositionLocalProvider(LocalMetroViewModelFactory provides metroViewModelFactory) {
+        CmpProxyTheme {
+            val viewModel = metroViewModel<SettingsViewModel>()
+            SettingsScreen(viewModel)
         }
     }
 }
@@ -176,3 +185,4 @@ private fun CompactAppTabs(
 }
 
 private const val RULES_TAB_INDEX = 1
+private const val SETTINGS_TAB_INDEX = 2

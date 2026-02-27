@@ -1,5 +1,8 @@
 <resources>
     <string name="settings_title_proxy">Proxy Settings</string>
+    <string name="settings_title_ssl">SSL Settings</string>
+    <string name="settings_tab_proxy">Proxy</string>
+    <string name="settings_tab_ssl">SSL</string>
     <string name="settings_label_proxy_port">Proxy port</string>
     <string name="settings_label_enable_ssl_decryption">Enable SSL decryption</string>
     <string name="settings_certificate_generated">Root certificate generated.</string>
