@@ -322,7 +322,6 @@ private fun ResponseDetailPane(
                 SessionDetailTab.Headers,
                 SessionDetailTab.Cookies,
                 SessionDetailTab.Body,
-                SessionDetailTab.Websocket,
                 -> Text(stringResource(Res.string.sessions_no_upstream_response))
             }
             return@DetailPane
@@ -382,7 +381,6 @@ private fun ResponseDetailPane(
                     bodyType = response.bodyType,
                 )
             }
-            SessionDetailTab.Websocket -> WebSocketMessageTable(session.webSocketMessages)
         }
     }
 }

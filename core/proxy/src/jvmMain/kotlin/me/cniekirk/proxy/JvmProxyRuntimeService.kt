@@ -1917,7 +1917,7 @@ class JvmProxyRuntimeService(
 
             WebSocketOpcode.Binary -> {
                 val preview = payload.take(256).joinToString(" ") { b -> "%02x".format(b) }
-                if (payload.size > 256) "$preview …" else preview
+                if (payload.size > 256) "$preview ..." else preview
             }
         }
     }
@@ -1949,7 +1949,7 @@ class JvmProxyRuntimeService(
                     )
                 }
 
-                if (frame.opcode == 8) break  // Close frame – stop relaying
+                if (frame.opcode == 8) break  // Close frame - stop relaying
             }
         } catch (error: Exception) {
             if (!error.isExpectedRelayTermination()) {
