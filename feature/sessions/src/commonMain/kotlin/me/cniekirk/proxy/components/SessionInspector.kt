@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,6 +46,9 @@ import me.cniekirk.proxy.CapturedBodyType
 import me.cniekirk.proxy.CapturedSession
 import me.cniekirk.proxy.HeaderEntry
 import me.cniekirk.proxy.JsonTreeView
+import me.cniekirk.proxy.WebSocketDirection
+import me.cniekirk.proxy.WebSocketMessage
+import me.cniekirk.proxy.WebSocketOpcode
 import org.jetbrains.compose.resources.stringResource
 import proxy.feature.sessions.generated.resources.*
 
@@ -206,6 +210,11 @@ private fun RequestDetailPane(
     onTabSelected: (SessionDetailTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val isWs = session.isWebSocketSession()
+    val availableTabs = remember(isWs) {
+        if (isWs) SessionDetailTab.entries.toList()
+        else SessionDetailTab.entries.filter { it != SessionDetailTab.Websocket }
+    }
     DetailPane(
         title = stringResource(Res.string.sessions_request_title),
         subtitle = stringResource(
@@ -213,6 +222,7 @@ private fun RequestDetailPane(
             session.request.method,
             session.request.url,
         ),
+        tabs = availableTabs,
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
         modifier = modifier,
@@ -262,6 +272,7 @@ private fun RequestDetailPane(
                     bodyType = session.request.bodyType,
                 )
             }
+            SessionDetailTab.Websocket -> WebSocketMessageTable(session.webSocketMessages)
         }
     }
 }
@@ -274,14 +285,25 @@ private fun ResponseDetailPane(
     modifier: Modifier = Modifier,
 ) {
     val response = session.response
+    val isWs = session.isWebSocketSession()
+    val availableTabs = remember(isWs) {
+        if (isWs) SessionDetailTab.entries.toList()
+        else SessionDetailTab.entries.filter { it != SessionDetailTab.Websocket }
+    }
     DetailPane(
         title = stringResource(Res.string.sessions_response_title),
         subtitle = response?.let { capturedResponse -> responseCodeText(capturedResponse) }
             ?: stringResource(Res.string.sessions_response_no_response_subtitle),
+        tabs = availableTabs,
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
         modifier = modifier,
     ) { tab ->
+        if (tab == SessionDetailTab.Websocket) {
+            WebSocketMessageTable(session.webSocketMessages)
+            return@DetailPane
+        }
+
         if (response == null) {
             when (tab) {
                 SessionDetailTab.Overview -> {
@@ -300,6 +322,7 @@ private fun ResponseDetailPane(
                 SessionDetailTab.Headers,
                 SessionDetailTab.Cookies,
                 SessionDetailTab.Body,
+                SessionDetailTab.Websocket,
                 -> Text(stringResource(Res.string.sessions_no_upstream_response))
             }
             return@DetailPane
@@ -359,6 +382,7 @@ private fun ResponseDetailPane(
                     bodyType = response.bodyType,
                 )
             }
+            SessionDetailTab.Websocket -> WebSocketMessageTable(session.webSocketMessages)
         }
     }
 }
@@ -367,6 +391,7 @@ private fun ResponseDetailPane(
 private fun DetailPane(
     title: String,
     subtitle: String,
+    tabs: List<SessionDetailTab>,
     selectedTab: SessionDetailTab,
     onTabSelected: (SessionDetailTab) -> Unit,
     modifier: Modifier = Modifier,
@@ -394,6 +419,7 @@ private fun DetailPane(
             }
 
             CompactTabStrip(
+                tabs = tabs,
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected,
             )
@@ -413,6 +439,7 @@ private fun DetailPane(
 
 @Composable
 private fun CompactTabStrip(
+    tabs: List<SessionDetailTab>,
     selectedTab: SessionDetailTab,
     onTabSelected: (SessionDetailTab) -> Unit,
 ) {
@@ -423,7 +450,7 @@ private fun CompactTabStrip(
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SessionDetailTab.entries.forEach { tab ->
+        tabs.forEach { tab ->
             val isSelected = selectedTab == tab
             Surface(
                 shape = RoundedCornerShape(5.dp),
@@ -465,6 +492,117 @@ private fun sessionDetailTabTitle(tab: SessionDetailTab): String {
         SessionDetailTab.Headers -> stringResource(Res.string.sessions_detail_tab_headers)
         SessionDetailTab.Cookies -> stringResource(Res.string.sessions_detail_tab_cookies)
         SessionDetailTab.Body -> stringResource(Res.string.sessions_detail_tab_body)
+        SessionDetailTab.Websocket -> stringResource(Res.string.sessions_detail_tab_websocket)
+    }
+}
+
+private fun CapturedSession.isWebSocketSession(): Boolean {
+    return webSocketMessages.isNotEmpty() ||
+        (
+            request.headers.any { it.name.equals("Upgrade", ignoreCase = true) && it.value.equals("websocket", ignoreCase = true) } &&
+                response?.statusCode == 101
+        )
+}
+
+@Composable
+private fun WebSocketMessageTable(messages: List<WebSocketMessage>) {
+    if (messages.isEmpty()) {
+        Text(stringResource(Res.string.sessions_websocket_no_messages))
+        return
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.sessions_websocket_table_direction),
+                    modifier = Modifier.weight(1.2f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_websocket_table_opcode),
+                    modifier = Modifier.weight(0.8f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_websocket_table_size),
+                    modifier = Modifier.weight(0.7f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(Res.string.sessions_websocket_table_payload),
+                    modifier = Modifier.weight(2.3f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            messages.forEachIndexed { index, message ->
+                val rowColor = if (index % 2 == 0) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+                }
+                val directionLabel = when (message.direction) {
+                    WebSocketDirection.ClientToServer ->
+                        stringResource(Res.string.sessions_websocket_direction_client_to_server)
+                    WebSocketDirection.ServerToClient ->
+                        stringResource(Res.string.sessions_websocket_direction_server_to_client)
+                }
+                val directionColor = when (message.direction) {
+                    WebSocketDirection.ClientToServer -> Color(0xFF1E40AF)
+                    WebSocketDirection.ServerToClient -> Color(0xFF166534)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(rowColor)
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = directionLabel,
+                        modifier = Modifier.weight(1.2f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = directionColor,
+                    )
+                    Text(
+                        text = message.opcode.name,
+                        modifier = Modifier.weight(0.8f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = formatBytes(message.payloadSizeBytes.toLong()),
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = message.payloadText,
+                        modifier = Modifier.weight(2.3f),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
     }
 }
 

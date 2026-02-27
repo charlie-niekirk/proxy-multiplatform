@@ -26,6 +26,14 @@
     <string name="sessions_detail_tab_headers">Headers</string>
     <string name="sessions_detail_tab_cookies">Cookies</string>
     <string name="sessions_detail_tab_body">Body</string>
+    <string name="sessions_detail_tab_websocket">Websocket</string>
+    <string name="sessions_websocket_no_messages">No WebSocket messages captured for this session.</string>
+    <string name="sessions_websocket_table_direction">Direction</string>
+    <string name="sessions_websocket_table_opcode">Type</string>
+    <string name="sessions_websocket_table_size">Size</string>
+    <string name="sessions_websocket_table_payload">Payload</string>
+    <string name="sessions_websocket_direction_client_to_server">↑ Client</string>
+    <string name="sessions_websocket_direction_server_to_client">↓ Server</string>
     <string name="sessions_inspector_empty">Select a captured request to inspect request and response details.</string>
     <string name="sessions_request_title">Request</string>
     <string name="sessions_request_subtitle">%1$s %2$s</string>

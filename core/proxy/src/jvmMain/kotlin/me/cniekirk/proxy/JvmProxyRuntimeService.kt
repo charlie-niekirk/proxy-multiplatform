@@ -29,6 +29,7 @@ import java.net.SocketException
 import java.net.URL
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.Locale
 import java.util.UUID
 import java.util.zip.GZIPInputStream
@@ -895,6 +896,29 @@ class JvmProxyRuntimeService(
             )
             clientToUpstreamBytes += effectiveRequest.bodyBytes.size.toLong()
 
+            if (effectiveRequest.headers.isWebSocketUpgrade()) {
+                val wsResult = handleWebSocketSession(
+                    clientInput = clientInput,
+                    clientOutput = clientOutput,
+                    connectTarget = connectTarget,
+                    request = effectiveRequest,
+                    targetUrl = targetUrl,
+                    requestTimestamp = requestTimestamp,
+                    requestPreview = requestPreview,
+                    requestTraces = requestMutationResult.traces,
+                    maxBodyCaptureBytes = maxBodyCaptureBytes,
+                )
+                clientToUpstreamBytes += wsResult.clientToUpstreamBytes
+                upstreamToClientBytes += wsResult.upstreamToClientBytes
+                capturedHttpSessions += 1
+                return TunnelRelayResult(
+                    clientToUpstreamBytes = clientToUpstreamBytes,
+                    upstreamToClientBytes = upstreamToClientBytes,
+                    errorMessage = wsResult.errorMessage,
+                    capturedHttpSessions = capturedHttpSessions,
+                )
+            }
+
             val upstreamResponse = try {
                 forwardRequest(targetUrl, effectiveRequest)
             } catch (error: Exception) {
@@ -1699,9 +1723,425 @@ class JvmProxyRuntimeService(
         val mutations: MutableList<String> = mutableListOf(),
     )
 
+    private data class WebSocketRelayResult(
+        val clientToUpstreamBytes: Long,
+        val upstreamToClientBytes: Long,
+        val errorMessage: String?,
+    )
+
+    private data class WebSocketFrameCapture(
+        val opcode: Int,
+        val isFin: Boolean,
+        val capturedPayload: ByteArray,
+        val totalPayloadSize: Long,
+    )
+
     private enum class ConnectMode(val label: String) {
         TUNNEL("TUNNEL"),
         MITM("MITM"),
+    }
+
+    // -------------------------------------------------------------------------
+    // WebSocket helpers
+    // -------------------------------------------------------------------------
+
+    private fun List<HeaderEntry>.isWebSocketUpgrade(): Boolean {
+        val upgrade = headerValue("Upgrade")
+        val connection = headerValue("Connection")
+        return upgrade?.equals("websocket", ignoreCase = true) == true &&
+            connection?.contains("Upgrade", ignoreCase = true) == true
+    }
+
+    private fun parseRawResponseHeader(
+        responseBytes: ByteArray,
+    ): Triple<Int, String, List<HeaderEntry>>? {
+        val text = responseBytes.toString(StandardCharsets.ISO_8859_1)
+        val lines = text.split(HEADER_LINE_DELIMITER)
+        val statusLine = lines.firstOrNull()?.trim().orEmpty()
+        val statusParts = statusLine.split(' ', limit = 3)
+        if (statusParts.size < 2) return null
+        val statusCode = statusParts[1].toIntOrNull() ?: return null
+        val reasonPhrase = statusParts.getOrElse(2) { "" }.trim()
+        val headers = lines
+            .drop(1)
+            .takeWhile { it.isNotEmpty() }
+            .mapNotNull { line ->
+                val sep = line.indexOf(':')
+                if (sep <= 0) null
+                else HeaderEntry(
+                    name = line.substring(0, sep).trim(),
+                    value = line.substring(sep + 1).trim(),
+                )
+            }
+        return Triple(statusCode, reasonPhrase, headers)
+    }
+
+    private fun writeRawResponseHeader(
+        output: OutputStream,
+        statusCode: Int,
+        reasonPhrase: String,
+        headers: List<HeaderEntry>,
+    ) {
+        output.write("HTTP/1.1 $statusCode $reasonPhrase\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+        headers.forEach { header ->
+            output.write("${header.name}: ${header.value}\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+        }
+        output.write("\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+        output.flush()
+    }
+
+    private fun writeRawRequest(request: ParsedRequest, output: OutputStream) {
+        output.write(
+            "${request.method} ${request.target} HTTP/1.1\r\n"
+                .toByteArray(StandardCharsets.ISO_8859_1),
+        )
+        request.headers.forEach { header ->
+            output.write("${header.name}: ${header.value}\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+        }
+        output.write("\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+        if (request.bodyBytes.isNotEmpty()) {
+            output.write(request.bodyBytes)
+        }
+        output.flush()
+    }
+
+    /**
+     * Reads one WebSocket frame from [source], writes it verbatim to [sink],
+     * and returns a capture of up to [maxCaptureBytes] of the (unmasked) payload.
+     * Returns null when the source stream is cleanly closed (EOF on first byte).
+     */
+    private fun readAndForwardWebSocketFrame(
+        source: InputStream,
+        sink: OutputStream,
+        maxCaptureBytes: Int,
+    ): WebSocketFrameCapture? {
+        val b0 = source.read()
+        if (b0 == -1) return null
+        val b1 = source.read()
+        if (b1 == -1) return null
+
+        val fin = (b0 and 0x80) != 0
+        val opcode = b0 and 0x0F
+        val masked = (b1 and 0x80) != 0
+
+        val headerOut = ByteArrayOutputStream(14)
+        headerOut.write(b0)
+        headerOut.write(b1)
+
+        var payloadLen = (b1 and 0x7F).toLong()
+        when (payloadLen.toInt()) {
+            126 -> {
+                val ext = readFixedLengthBody(source, 2)
+                headerOut.write(ext)
+                payloadLen = ((ext[0].toInt() and 0xFF) shl 8 or (ext[1].toInt() and 0xFF)).toLong()
+            }
+            127 -> {
+                val ext = readFixedLengthBody(source, 8)
+                headerOut.write(ext)
+                payloadLen = 0L
+                for (b in ext) {
+                    payloadLen = (payloadLen shl 8) or (b.toLong() and 0xFF)
+                }
+            }
+        }
+
+        val maskKey: ByteArray? = if (masked) {
+            val key = readFixedLengthBody(source, 4)
+            headerOut.write(key)
+            key
+        } else {
+            null
+        }
+
+        sink.write(headerOut.toByteArray())
+
+        val captureOut = ByteArrayOutputStream(minOf(payloadLen, maxCaptureBytes.toLong()).toInt())
+        val buffer = ByteArray(TUNNEL_BUFFER_BYTES)
+        var remaining = payloadLen
+        var maskOffset = 0L
+        var capturedSoFar = 0L
+
+        while (remaining > 0) {
+            val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+            val read = source.read(buffer, 0, toRead)
+            if (read == -1) throw EOFException("Unexpected end of WebSocket frame payload.")
+            sink.write(buffer, 0, read)
+
+            if (capturedSoFar < maxCaptureBytes) {
+                val toCopy = minOf(read.toLong(), maxCaptureBytes - capturedSoFar).toInt()
+                if (maskKey != null) {
+                    for (i in 0 until toCopy) {
+                        val bytePos = (maskOffset + i).toInt()
+                        captureOut.write(
+                            (buffer[i].toInt() and 0xFF) xor (maskKey[bytePos % 4].toInt() and 0xFF),
+                        )
+                    }
+                } else {
+                    captureOut.write(buffer, 0, toCopy)
+                }
+                capturedSoFar += toCopy
+            }
+
+            maskOffset += read
+            remaining -= read
+        }
+
+        sink.flush()
+
+        return WebSocketFrameCapture(
+            opcode = opcode,
+            isFin = fin,
+            capturedPayload = captureOut.toByteArray(),
+            totalPayloadSize = payloadLen,
+        )
+    }
+
+    private fun mapWebSocketOpcode(opcode: Int): WebSocketOpcode? = when (opcode) {
+        0 -> WebSocketOpcode.Continuation
+        1 -> WebSocketOpcode.Text
+        2 -> WebSocketOpcode.Binary
+        8 -> WebSocketOpcode.Close
+        9 -> WebSocketOpcode.Ping
+        10 -> WebSocketOpcode.Pong
+        else -> null
+    }
+
+    private fun decodeWebSocketPayload(payload: ByteArray, opcode: WebSocketOpcode): String {
+        return when (opcode) {
+            WebSocketOpcode.Text,
+            WebSocketOpcode.Continuation,
+            WebSocketOpcode.Close,
+            WebSocketOpcode.Ping,
+            WebSocketOpcode.Pong,
+            -> payload.toString(StandardCharsets.UTF_8)
+
+            WebSocketOpcode.Binary -> {
+                val preview = payload.take(256).joinToString(" ") { b -> "%02x".format(b) }
+                if (payload.size > 256) "$preview …" else preview
+            }
+        }
+    }
+
+    private fun relayWebSocketDirection(
+        source: InputStream,
+        sink: OutputStream,
+        direction: WebSocketDirection,
+        maxCaptureBytes: Int,
+        messages: MutableList<WebSocketMessage>,
+    ): Long {
+        var totalBytes = 0L
+        try {
+            while (true) {
+                val frame = readAndForwardWebSocketFrame(source, sink, maxCaptureBytes) ?: break
+                totalBytes += frame.totalPayloadSize
+
+                val opcode = mapWebSocketOpcode(frame.opcode)
+                if (opcode != null) {
+                    messages.add(
+                        WebSocketMessage(
+                            direction = direction,
+                            opcode = opcode,
+                            payloadText = decodeWebSocketPayload(frame.capturedPayload, opcode),
+                            payloadSizeBytes = frame.totalPayloadSize
+                                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                            timestampEpochMillis = System.currentTimeMillis(),
+                        ),
+                    )
+                }
+
+                if (frame.opcode == 8) break  // Close frame – stop relaying
+            }
+        } catch (error: Exception) {
+            if (!error.isExpectedRelayTermination()) {
+                logWarn("WebSocket relay error ($direction): ${error.message}")
+            }
+        }
+        return totalBytes
+    }
+
+    private suspend fun relayAndCaptureWebSocketFrames(
+        clientIn: InputStream,
+        clientOut: OutputStream,
+        upstreamIn: InputStream,
+        upstreamOut: OutputStream,
+        maxCaptureBytes: Int,
+    ): Pair<List<WebSocketMessage>, Pair<Long, Long>> = coroutineScope {
+        val messages: MutableList<WebSocketMessage> = CopyOnWriteArrayList()
+
+        val c2uJob = async(Dispatchers.IO) {
+            relayWebSocketDirection(
+                source = clientIn,
+                sink = upstreamOut,
+                direction = WebSocketDirection.ClientToServer,
+                maxCaptureBytes = maxCaptureBytes,
+                messages = messages,
+            )
+        }
+        val u2cJob = async(Dispatchers.IO) {
+            relayWebSocketDirection(
+                source = upstreamIn,
+                sink = clientOut,
+                direction = WebSocketDirection.ServerToClient,
+                maxCaptureBytes = maxCaptureBytes,
+                messages = messages,
+            )
+        }
+
+        val c2uBytes = c2uJob.await()
+        val u2cBytes = u2cJob.await()
+
+        messages.sortedBy { it.timestampEpochMillis } to (c2uBytes to u2cBytes)
+    }
+
+    private suspend fun handleWebSocketSession(
+        clientInput: InputStream,
+        clientOutput: OutputStream,
+        connectTarget: ConnectTarget,
+        request: ParsedRequest,
+        targetUrl: URL,
+        requestTimestamp: Long,
+        requestPreview: String?,
+        requestTraces: List<RuleExecutionTrace>,
+        maxBodyCaptureBytes: Long,
+    ): WebSocketRelayResult {
+        val sessionId = UUID.randomUUID().toString()
+        val capturedRequest = CapturedRequest(
+            method = request.method,
+            url = targetUrl.toString(),
+            headers = request.headers,
+            body = requestPreview,
+            bodySizeBytes = request.bodyBytes.size.toLong(),
+            timestampEpochMillis = requestTimestamp,
+        )
+
+        val upstreamSocket = runCatching {
+            (SSLSocketFactory.getDefault() as SSLSocketFactory)
+                .createSocket(connectTarget.host, connectTarget.port) as SSLSocket
+        }.getOrElse { error ->
+            val message = "Failed to connect WebSocket upstream: ${error.message}"
+            logError(message, error)
+            sessionRepository.addSession(
+                CapturedSession(
+                    id = sessionId,
+                    request = capturedRequest,
+                    response = null,
+                    error = message,
+                    durationMillis = System.currentTimeMillis() - requestTimestamp,
+                    appliedRules = buildAppliedRuleTraces(requestTraces, emptyList()),
+                ),
+            )
+            writeRawResponseHeader(clientOutput, 502, "Bad Gateway", emptyList())
+            return WebSocketRelayResult(0L, 0L, message)
+        }
+
+        return try {
+            upstreamSocket.apply {
+                enabledProtocols = enabledProtocols.preferredTlsProtocols()
+                startHandshake()
+            }
+
+            val upstreamIn = upstreamSocket.inputStream
+            val upstreamOut = upstreamSocket.outputStream
+
+            writeRawRequest(request, upstreamOut)
+
+            val responseHeaderBytes = readHeaderBytes(upstreamIn)
+            if (responseHeaderBytes == null) {
+                val message = "WebSocket upstream closed without response."
+                sessionRepository.addSession(
+                    CapturedSession(
+                        id = sessionId,
+                        request = capturedRequest,
+                        response = null,
+                        error = message,
+                        durationMillis = System.currentTimeMillis() - requestTimestamp,
+                        appliedRules = buildAppliedRuleTraces(requestTraces, emptyList()),
+                    ),
+                )
+                writeRawResponseHeader(clientOutput, 502, "Bad Gateway", emptyList())
+                return WebSocketRelayResult(0L, 0L, message)
+            }
+
+            val (statusCode, reasonPhrase, responseHeaders) = parseRawResponseHeader(responseHeaderBytes)
+                ?: run {
+                    val message = "Malformed WebSocket upstream response."
+                    sessionRepository.addSession(
+                        CapturedSession(
+                            id = sessionId,
+                            request = capturedRequest,
+                            response = null,
+                            error = message,
+                            durationMillis = System.currentTimeMillis() - requestTimestamp,
+                            appliedRules = buildAppliedRuleTraces(requestTraces, emptyList()),
+                        ),
+                    )
+                    writeRawResponseHeader(clientOutput, 502, "Bad Gateway", emptyList())
+                    return WebSocketRelayResult(0L, 0L, message)
+                }
+
+            val responseTimestamp = System.currentTimeMillis()
+            writeRawResponseHeader(clientOutput, statusCode, reasonPhrase, responseHeaders)
+
+            val initialSession = CapturedSession(
+                id = sessionId,
+                request = capturedRequest,
+                response = CapturedResponse(
+                    statusCode = statusCode,
+                    reasonPhrase = reasonPhrase,
+                    headers = responseHeaders,
+                    body = null,
+                    bodySizeBytes = 0L,
+                    timestampEpochMillis = responseTimestamp,
+                ),
+                error = null,
+                durationMillis = responseTimestamp - requestTimestamp,
+                appliedRules = buildAppliedRuleTraces(requestTraces, emptyList()),
+                webSocketMessages = emptyList(),
+            )
+            sessionRepository.upsertSession(initialSession)
+
+            if (statusCode != 101) {
+                logDebug("WebSocket upgrade declined by upstream: $statusCode $reasonPhrase")
+                return WebSocketRelayResult(0L, 0L, null)
+            }
+
+            logDebug("WebSocket connection established: $targetUrl")
+
+            val maxCapture = maxBodyCaptureBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            val (capturedMessages, byteCounts) = relayAndCaptureWebSocketFrames(
+                clientIn = clientInput,
+                clientOut = clientOutput,
+                upstreamIn = upstreamIn,
+                upstreamOut = upstreamOut,
+                maxCaptureBytes = maxCapture,
+            )
+
+            val finalDuration = System.currentTimeMillis() - requestTimestamp
+            sessionRepository.upsertSession(
+                initialSession.copy(
+                    durationMillis = finalDuration,
+                    webSocketMessages = capturedMessages,
+                ),
+            )
+
+            logDebug(
+                "WebSocket session completed: $targetUrl " +
+                    "messages=${capturedMessages.size} " +
+                    "bytes(${byteCounts.first}/${byteCounts.second})",
+            )
+
+            WebSocketRelayResult(
+                clientToUpstreamBytes = byteCounts.first,
+                upstreamToClientBytes = byteCounts.second,
+                errorMessage = null,
+            )
+        } catch (error: Exception) {
+            val message = error.message ?: error::class.simpleName.orEmpty()
+            logError("WebSocket session error for $targetUrl: $message", error)
+            WebSocketRelayResult(0L, 0L, message)
+        } finally {
+            runCatching { upstreamSocket.close() }
+        }
     }
 
     private companion object {
