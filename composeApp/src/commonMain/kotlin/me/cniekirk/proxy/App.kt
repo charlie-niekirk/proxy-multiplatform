@@ -86,6 +86,7 @@ fun AppEntryPoint(
                         val viewModel = metroViewModel<SessionsViewModel>()
                         SessionsScreen(viewModel)
                     }
+                    else -> Unit
                 }
             }
         }

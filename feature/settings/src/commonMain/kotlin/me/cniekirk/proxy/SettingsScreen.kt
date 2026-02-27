@@ -165,12 +165,16 @@ private fun SettingsTabRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val background = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent
+    val backgroundColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = SELECTED_TAB_BACKGROUND_ALPHA)
+    } else {
+        Color.Transparent
+    }
     Text(
         text = title,
         modifier = Modifier
             .fillMaxWidth()
-            .background(background)
+            .background(backgroundColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodySmall,
@@ -182,6 +186,8 @@ private enum class SettingsTab {
     Proxy,
     Ssl,
 }
+
+private const val SELECTED_TAB_BACKGROUND_ALPHA = 0.14f
 
 @Composable
 private fun CertificateOnboardingCard(onboardingUrls: CertificateOnboardingUrls) {
