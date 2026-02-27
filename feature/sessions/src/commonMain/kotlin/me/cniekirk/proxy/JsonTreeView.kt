@@ -7,11 +7,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,8 +22,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +45,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -51,8 +63,23 @@ import kotlinx.serialization.json.JsonPrimitive
 import me.cniekirk.proxy.ui.CompactButton
 import me.cniekirk.proxy.ui.CompactTextField
 import org.jetbrains.compose.resources.stringResource
-import proxy.feature.sessions.generated.resources.*
+import proxy.feature.sessions.generated.resources.Res
+import proxy.feature.sessions.generated.resources.sessions_json_action_copy_all
+import proxy.feature.sessions.generated.resources.sessions_json_action_copy_node
+import proxy.feature.sessions.generated.resources.sessions_json_action_find
+import proxy.feature.sessions.generated.resources.sessions_json_action_next
+import proxy.feature.sessions.generated.resources.sessions_json_find_label
+import proxy.feature.sessions.generated.resources.sessions_json_invalid_regex_pattern
+import proxy.feature.sessions.generated.resources.sessions_json_parse_failed
+import proxy.feature.sessions.generated.resources.sessions_json_regex_label
+import proxy.feature.sessions.generated.resources.sessions_json_search_count
+import proxy.feature.sessions.generated.resources.sessions_json_search_invalid_regex
+import proxy.feature.sessions.generated.resources.sessions_json_search_no_matches
+import proxy.feature.sessions.generated.resources.sessions_json_search_prompt
+import proxy.feature.sessions.generated.resources.sessions_json_summary_items
+import proxy.feature.sessions.generated.resources.sessions_json_summary_keys
 
+@Suppress("DEPRECATION")
 @Composable
 internal fun JsonTreeView(
     json: String,
@@ -66,6 +93,8 @@ internal fun JsonTreeView(
     val regexLabel = stringResource(Res.string.sessions_json_regex_label)
     val findActionLabel = stringResource(Res.string.sessions_json_action_find)
     val nextActionLabel = stringResource(Res.string.sessions_json_action_next)
+    val copyNodeActionLabel = stringResource(Res.string.sessions_json_action_copy_node)
+    val copyAllActionLabel = stringResource(Res.string.sessions_json_action_copy_all)
     val invalidRegexPatternLabel = stringResource(Res.string.sessions_json_invalid_regex_pattern)
     val summaryKeysLabel = stringResource(Res.string.sessions_json_summary_keys)
     val summaryItemsLabel = stringResource(Res.string.sessions_json_summary_items)
@@ -75,6 +104,7 @@ internal fun JsonTreeView(
     }
     val parsedElement = parseResult.getOrNull()
     val monoTextStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val clipboardManager = LocalClipboardManager.current
 
     if (parsedElement == null) {
         Column(
@@ -93,10 +123,12 @@ internal fun JsonTreeView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                text = json,
-                style = monoTextStyle,
-            )
+            SelectionContainer {
+                Text(
+                    text = json,
+                    style = monoTextStyle,
+                )
+            }
         }
         return
     }
@@ -108,7 +140,6 @@ internal fun JsonTreeView(
             parentId = null,
             depth = 0,
             key = null,
-            index = null,
         )
     }
     val orderedNodes = remember(rootNode) { flattenTreeNodes(rootNode) }
@@ -116,20 +147,22 @@ internal fun JsonTreeView(
         orderedNodes.associate { node -> node.id to node.parentId }
     }
     val rowTextById = remember(orderedNodes) {
-        orderedNodes.associate { node ->
-            node.id to nodeText(
-                node = node,
-                summaryKeysLabel = summaryKeysLabel,
-                summaryItemsLabel = summaryItemsLabel,
-            )
-        }
+        orderedNodes.associate { node -> node.id to buildNodeSearchText(node) }
     }
     val expandedNodes = remember(rootNode) {
         mutableStateMapOf<String, Boolean>().apply {
             initializeExpansionMap(rootNode, this)
         }
     }
+    val visibleLineNumbers = remember(rootNode) {
+        computeTreeLineNumbers(rootNode)
+    }
+    val lineNumberDigits = visibleLineNumbers.totalLines
+        .coerceAtLeast(1)
+        .toString()
+        .length
     val bringIntoViewByNode = remember(rootNode) { mutableMapOf<String, BringIntoViewRequester>() }
+    val formattedJsonBody = remember(parsedElement) { PrettyJsonFormatter.encode(parsedElement) }
 
     var searchText by remember(rootNode) { mutableStateOf("") }
     var regexEnabled by remember(rootNode) { mutableStateOf(false) }
@@ -207,6 +240,22 @@ internal fun JsonTreeView(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            IconButton(
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(formattedJsonBody))
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = copyAllActionLabel,
+                )
+            }
+        }
+
         CompactTextField(
             value = searchText,
             onValueChange = { value ->
@@ -267,44 +316,80 @@ internal fun JsonTreeView(
             )
         }
 
-        JsonTreeNodeRow(
-            node = rootNode,
-            expandedNodes = expandedNodes,
-            hitRangesByNode = hitRangesByNode,
-            selectedHit = selectedHit,
-            bringIntoViewByNode = bringIntoViewByNode,
-            summaryKeysLabel = summaryKeysLabel,
-            summaryItemsLabel = summaryItemsLabel,
-        )
+        SelectionContainer {
+            JsonTreeNodeRow(
+                node = rootNode,
+                isLast = true,
+                expandedNodes = expandedNodes,
+                hitRangesByNode = hitRangesByNode,
+                selectedHit = selectedHit,
+                bringIntoViewByNode = bringIntoViewByNode,
+                copyNodeActionLabel = copyNodeActionLabel,
+                visibleLineNumbers = visibleLineNumbers,
+                lineNumberDigits = lineNumberDigits,
+                summaryKeysLabel = summaryKeysLabel,
+                summaryItemsLabel = summaryItemsLabel,
+            )
+        }
     }
 }
 
+@Suppress("DEPRECATION")
 @Composable
 private fun JsonTreeNodeRow(
     node: JsonTreeNode,
+    isLast: Boolean,
     expandedNodes: SnapshotStateMap<String, Boolean>,
     hitRangesByNode: Map<String, List<IntRange>>,
     selectedHit: JsonSearchHit?,
     bringIntoViewByNode: MutableMap<String, BringIntoViewRequester>,
+    copyNodeActionLabel: String,
+    visibleLineNumbers: JsonVisibleLineNumbers,
+    lineNumberDigits: Int,
     summaryKeysLabel: String,
     summaryItemsLabel: String,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val monoTextStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val clipboardManager = LocalClipboardManager.current
+    val gutterBackgroundColor = colorScheme.surfaceVariant.copy(alpha = 0.24f)
+    val gutterDividerColor = colorScheme.outline.copy(alpha = 0.45f)
 
     val hasChildren = node.children.isNotEmpty()
     val expanded = expandedNodes[node.id] ?: false
+    val leadingWhitespace = remember(node.depth) { " ".repeat((node.depth * 2) + 1) }
     val requester = remember(node.id) { BringIntoViewRequester() }
-    val textPieces = remember(node.id, summaryKeysLabel, summaryItemsLabel) {
-        buildNodeTextPieces(
+    val openingLinePieces = remember(node.id, isLast, expanded) {
+        buildOpeningLineTextPieces(
             node = node,
+            isLast = isLast,
+            expanded = expanded,
             summaryKeysLabel = summaryKeysLabel,
             summaryItemsLabel = summaryItemsLabel,
         )
     }
+    val selectableLineText = remember(node.id, isLast, expanded) {
+        buildSelectableOpeningLineText(
+            node = node,
+            isLast = isLast,
+            expanded = expanded,
+        )
+    }
+    val nodeJsonText = remember(node.element) { PrettyJsonFormatter.encode(node.element) }
     val rowMatchRanges = hitRangesByNode[node.id].orEmpty()
     val activeRange = selectedHit?.takeIf { hit -> hit.nodeId == node.id }?.range
+    val matchRangesWithIndent = remember(rowMatchRanges, leadingWhitespace) {
+        rowMatchRanges.map { range ->
+            (range.first + leadingWhitespace.length)..(range.last + leadingWhitespace.length)
+        }
+    }
+    val activeRangeWithIndent = remember(activeRange, leadingWhitespace) {
+        activeRange?.let { range ->
+            (range.first + leadingWhitespace.length)..(range.last + leadingWhitespace.length)
+        }
+    }
     val activeRow = activeRange != null
+    val openingLineNumber = visibleLineNumbers.openingByNodeId[node.id] ?: 0
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
         animationSpec = tween(durationMillis = 120),
@@ -318,49 +403,101 @@ private fun JsonTreeNodeRow(
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .bringIntoViewRequester(requester)
-            .then(
-                if (activeRow) {
-                    Modifier.background(colorScheme.primary.copy(alpha = 0.08f))
-                } else {
-                    Modifier
+    ContextMenuArea(
+        items = {
+            listOf(
+                ContextMenuItem(copyNodeActionLabel) {
+                    clipboardManager.setText(AnnotatedString(nodeJsonText))
                 },
             )
-            .clickable(enabled = hasChildren) {
-                expandedNodes[node.id] = !expanded
-            }
-            .padding(vertical = 1.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        },
     ) {
-        Spacer(modifier = Modifier.width((node.depth * 14).dp))
-
-        Box(
-            modifier = Modifier.width(10.dp),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(requester)
+                .then(
+                    if (activeRow) {
+                        Modifier.background(colorScheme.primary.copy(alpha = 0.08f))
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(vertical = 1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
         ) {
-            if (hasChildren) {
-                Text(
-                    text = ">",
-                    modifier = Modifier.rotate(chevronRotation),
-                    style = monoTextStyle,
-                    color = colorScheme.onSurfaceVariant,
+            DisableSelection {
+                Row(
+                    modifier = Modifier
+                        .background(gutterBackgroundColor)
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = openingLineNumber.toString().padStart(lineNumberDigits, ' '),
+                        style = monoTextStyle,
+                        color = colorScheme.onSurfaceVariant,
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .width(10.dp)
+                            .clickable(enabled = hasChildren) {
+                                expandedNodes[node.id] = !expanded
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (hasChildren) {
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                modifier = Modifier.rotate(chevronRotation),
+                                tint = colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            DisableSelection {
+                Box(
+                    modifier = Modifier
+                        .height(18.dp)
+                        .width(1.dp)
+                        .background(gutterDividerColor),
                 )
             }
-        }
 
-        Text(
-            text = buildAnnotatedNodeText(
-                pieces = textPieces,
-                colorScheme = colorScheme,
-                matchRanges = rowMatchRanges,
-                activeRange = activeRange,
-            ),
-            style = monoTextStyle,
-        )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp),
+            ) {
+                Text(
+                    text = leadingWhitespace + selectableLineText,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = monoTextStyle.copy(color = Color.Transparent),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                DisableSelection {
+                    Text(
+                        text = buildAnnotatedNodeText(
+                            pieces = listOf(JsonTextPiece(leadingWhitespace, JsonTokenType.Punctuation)) + openingLinePieces,
+                            colorScheme = colorScheme,
+                            matchRanges = matchRangesWithIndent,
+                            activeRange = activeRangeWithIndent,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        style = monoTextStyle,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
+        }
     }
 
     if (hasChildren) {
@@ -372,17 +509,111 @@ private fun JsonTreeNodeRow(
                 fadeOut(animationSpec = tween(durationMillis = 90)),
         ) {
             Column {
-                node.children.forEach { child ->
+                node.children.forEachIndexed { childIndex, child ->
                     JsonTreeNodeRow(
                         node = child,
+                        isLast = childIndex == node.children.lastIndex,
                         expandedNodes = expandedNodes,
                         hitRangesByNode = hitRangesByNode,
                         selectedHit = selectedHit,
                         bringIntoViewByNode = bringIntoViewByNode,
+                        copyNodeActionLabel = copyNodeActionLabel,
+                        visibleLineNumbers = visibleLineNumbers,
+                        lineNumberDigits = lineNumberDigits,
                         summaryKeysLabel = summaryKeysLabel,
                         summaryItemsLabel = summaryItemsLabel,
                     )
                 }
+                JsonTreeClosingRow(
+                    node = node,
+                    isLast = isLast,
+                    visibleLineNumbers = visibleLineNumbers,
+                    lineNumberDigits = lineNumberDigits,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun JsonTreeClosingRow(
+    node: JsonTreeNode,
+    isLast: Boolean,
+    visibleLineNumbers: JsonVisibleLineNumbers,
+    lineNumberDigits: Int,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val monoTextStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val gutterBackgroundColor = colorScheme.surfaceVariant.copy(alpha = 0.24f)
+    val gutterDividerColor = colorScheme.outline.copy(alpha = 0.45f)
+    val leadingWhitespace = remember(node.depth) { " ".repeat((node.depth * 2) + 1) }
+    val closingLinePieces = remember(node.id, isLast) {
+        buildClosingLineTextPieces(
+            node = node,
+            isLast = isLast,
+        )
+    }
+    val selectableClosingLine = remember(closingLinePieces) {
+        closingLinePieces.joinToString(separator = "") { piece -> piece.text }
+    }
+    val closingLineNumber = visibleLineNumbers.closingByNodeId[node.id] ?: 0
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        DisableSelection {
+            Row(
+                modifier = Modifier
+                    .background(gutterBackgroundColor)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = closingLineNumber.toString().padStart(lineNumberDigits, ' '),
+                    style = monoTextStyle,
+                    color = colorScheme.onSurfaceVariant,
+                )
+                Box(modifier = Modifier.width(10.dp))
+            }
+        }
+        DisableSelection {
+            Box(
+                modifier = Modifier
+                    .height(18.dp)
+                    .width(1.dp)
+                    .background(gutterDividerColor),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+        ) {
+            Text(
+                text = leadingWhitespace + selectableClosingLine,
+                modifier = Modifier.fillMaxWidth(),
+                style = monoTextStyle.copy(color = Color.Transparent),
+                maxLines = 1,
+                softWrap = false,
+            )
+            DisableSelection {
+                Text(
+                    text = buildAnnotatedNodeText(
+                        pieces = listOf(JsonTextPiece(leadingWhitespace, JsonTokenType.Punctuation)) + closingLinePieces,
+                        colorScheme = colorScheme,
+                        matchRanges = emptyList(),
+                        activeRange = null,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    style = monoTextStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
         }
     }
@@ -393,7 +624,6 @@ private data class JsonTreeNode(
     val parentId: String?,
     val depth: Int,
     val key: String?,
-    val index: Int?,
     val element: JsonElement,
     val children: List<JsonTreeNode>,
 )
@@ -422,6 +652,30 @@ private data class JsonTextPiece(
     val text: String,
     val type: JsonTokenType,
 )
+
+private data class JsonVisibleLineNumbers(
+    val openingByNodeId: Map<String, Int>,
+    val closingByNodeId: Map<String, Int>,
+    val totalLines: Int,
+)
+
+private object PrettyJsonFormatter {
+    private val prettyJson = Json {
+        prettyPrint = true
+        prettyPrintIndent = "  "
+    }
+    private val compactJson = Json {
+        prettyPrint = false
+    }
+
+    fun encode(element: JsonElement): String {
+        return prettyJson.encodeToString(JsonElement.serializer(), element)
+    }
+
+    fun encodeCompact(element: JsonElement): String {
+        return compactJson.encodeToString(JsonElement.serializer(), element)
+    }
+}
 
 private object JsonTreeParser {
     val json = Json {
@@ -547,7 +801,6 @@ private fun buildTreeNode(
     parentId: String?,
     depth: Int,
     key: String?,
-    index: Int?,
 ): JsonTreeNode {
     val children = when (element) {
         is JsonObject -> element.entries.mapIndexed { position, (childKey, childElement) ->
@@ -557,7 +810,6 @@ private fun buildTreeNode(
                 parentId = id,
                 depth = depth + 1,
                 key = childKey,
-                index = null,
             )
         }
 
@@ -568,7 +820,6 @@ private fun buildTreeNode(
                 parentId = id,
                 depth = depth + 1,
                 key = null,
-                index = childIndex,
             )
         }
 
@@ -580,7 +831,6 @@ private fun buildTreeNode(
         parentId = parentId,
         depth = depth,
         key = key,
-        index = index,
         element = element,
         children = children,
     )
@@ -603,7 +853,7 @@ private fun initializeExpansionMap(
     expandedNodes: SnapshotStateMap<String, Boolean>,
 ) {
     if (node.children.isNotEmpty()) {
-        expandedNodes[node.id] = node.depth <= 1
+        expandedNodes[node.id] = true
     }
     node.children.forEach { child ->
         initializeExpansionMap(
@@ -611,6 +861,31 @@ private fun initializeExpansionMap(
             expandedNodes = expandedNodes,
         )
     }
+}
+
+private fun computeTreeLineNumbers(root: JsonTreeNode): JsonVisibleLineNumbers {
+    var nextLineNumber = 1
+    val openingByNodeId = mutableMapOf<String, Int>()
+    val closingByNodeId = mutableMapOf<String, Int>()
+
+    fun visit(node: JsonTreeNode) {
+        openingByNodeId[node.id] = nextLineNumber
+        nextLineNumber += 1
+
+        if (node.children.isNotEmpty()) {
+            node.children.forEach(::visit)
+            closingByNodeId[node.id] = nextLineNumber
+            nextLineNumber += 1
+        }
+    }
+
+    visit(root)
+
+    return JsonVisibleLineNumbers(
+        openingByNodeId = openingByNodeId,
+        closingByNodeId = closingByNodeId,
+        totalLines = nextLineNumber - 1,
+    )
 }
 
 private fun expandAncestors(
@@ -712,50 +987,59 @@ private fun findRegexRanges(
     return ranges
 }
 
-private fun nodeText(
-    node: JsonTreeNode,
-    summaryKeysLabel: String,
-    summaryItemsLabel: String,
-): String {
-    val pieces = buildNodeTextPieces(
+private fun buildNodeSearchText(node: JsonTreeNode): String {
+    val pieces = mutableListOf<JsonTextPiece>()
+    appendNodePrefix(
+        pieces = pieces,
         node = node,
-        summaryKeysLabel = summaryKeysLabel,
-        summaryItemsLabel = summaryItemsLabel,
     )
-    return buildString {
-        pieces.forEach { piece ->
-            append(piece.text)
+    when (val value = node.element) {
+        is JsonObject -> {
+            if (value.isEmpty()) {
+                pieces += JsonTextPiece("{}", JsonTokenType.Punctuation)
+            } else {
+                pieces += JsonTextPiece("{", JsonTokenType.Punctuation)
+            }
+        }
+
+        is JsonArray -> {
+            if (value.isEmpty()) {
+                pieces += JsonTextPiece("[]", JsonTokenType.Punctuation)
+            } else {
+                pieces += JsonTextPiece("[", JsonTokenType.Punctuation)
+            }
+        }
+
+        is JsonPrimitive -> {
+            appendPrimitiveValuePieces(
+                pieces = pieces,
+                value = value,
+            )
         }
     }
+    return pieces.joinToString(separator = "") { piece -> piece.text }
 }
 
-private fun buildNodeTextPieces(
+private fun buildOpeningLineTextPieces(
     node: JsonTreeNode,
+    isLast: Boolean,
+    expanded: Boolean,
     summaryKeysLabel: String,
     summaryItemsLabel: String,
 ): List<JsonTextPiece> {
     val pieces = mutableListOf<JsonTextPiece>()
 
-    when {
-        node.parentId == null -> {
-            pieces += JsonTextPiece("\$: ", JsonTokenType.Punctuation)
-        }
-
-        node.key != null -> {
-            pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
-            pieces += JsonTextPiece(escapeJsonString(node.key), JsonTokenType.Key)
-            pieces += JsonTextPiece("\": ", JsonTokenType.Punctuation)
-        }
-
-        node.index != null -> {
-            pieces += JsonTextPiece("[${node.index}]: ", JsonTokenType.Punctuation)
-        }
-    }
+    appendNodePrefix(
+        pieces = pieces,
+        node = node,
+    )
 
     when (val value = node.element) {
         is JsonObject -> {
             if (value.isEmpty()) {
                 pieces += JsonTextPiece("{}", JsonTokenType.Punctuation)
+            } else if (expanded) {
+                pieces += JsonTextPiece("{", JsonTokenType.Punctuation)
             } else {
                 pieces += JsonTextPiece("{", JsonTokenType.Punctuation)
                 pieces += JsonTextPiece("${value.size} $summaryKeysLabel", JsonTokenType.Summary)
@@ -766,6 +1050,8 @@ private fun buildNodeTextPieces(
         is JsonArray -> {
             if (value.isEmpty()) {
                 pieces += JsonTextPiece("[]", JsonTokenType.Punctuation)
+            } else if (expanded) {
+                pieces += JsonTextPiece("[", JsonTokenType.Punctuation)
             } else {
                 pieces += JsonTextPiece("[", JsonTokenType.Punctuation)
                 pieces += JsonTextPiece("${value.size} $summaryItemsLabel", JsonTokenType.Summary)
@@ -774,33 +1060,138 @@ private fun buildNodeTextPieces(
         }
 
         is JsonPrimitive -> {
-            when {
-                value.isString -> {
-                    pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
-                    pieces += JsonTextPiece(escapeJsonString(value.content), JsonTokenType.StringValue)
-                    pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
-                }
-
-                value.content == "null" -> {
-                    pieces += JsonTextPiece("null", JsonTokenType.NullValue)
-                }
-
-                value.content == "true" || value.content == "false" -> {
-                    pieces += JsonTextPiece(value.content, JsonTokenType.BooleanValue)
-                }
-
-                value.content.toDoubleOrNull() != null -> {
-                    pieces += JsonTextPiece(value.content, JsonTokenType.NumberValue)
-                }
-
-                else -> {
-                    pieces += JsonTextPiece(value.content, JsonTokenType.Summary)
-                }
-            }
+            appendPrimitiveValuePieces(
+                pieces = pieces,
+                value = value,
+            )
         }
     }
 
+    if (shouldAppendCommaToOpeningLine(node.element, isLast, expanded)) {
+        pieces += JsonTextPiece(",", JsonTokenType.Punctuation)
+    }
+
     return pieces
+}
+
+private fun buildSelectableOpeningLineText(
+    node: JsonTreeNode,
+    isLast: Boolean,
+    expanded: Boolean,
+): String {
+    val pieces = mutableListOf<JsonTextPiece>()
+
+    appendNodePrefix(
+        pieces = pieces,
+        node = node,
+    )
+
+    when (val value = node.element) {
+        is JsonObject -> {
+            if (value.isEmpty()) {
+                pieces += JsonTextPiece("{}", JsonTokenType.Punctuation)
+            } else if (expanded) {
+                pieces += JsonTextPiece("{", JsonTokenType.Punctuation)
+            } else {
+                pieces += JsonTextPiece(PrettyJsonFormatter.encodeCompact(value), JsonTokenType.Summary)
+            }
+        }
+
+        is JsonArray -> {
+            if (value.isEmpty()) {
+                pieces += JsonTextPiece("[]", JsonTokenType.Punctuation)
+            } else if (expanded) {
+                pieces += JsonTextPiece("[", JsonTokenType.Punctuation)
+            } else {
+                pieces += JsonTextPiece(PrettyJsonFormatter.encodeCompact(value), JsonTokenType.Summary)
+            }
+        }
+
+        is JsonPrimitive -> {
+            appendPrimitiveValuePieces(
+                pieces = pieces,
+                value = value,
+            )
+        }
+    }
+
+    if (shouldAppendCommaToOpeningLine(node.element, isLast, expanded)) {
+        pieces += JsonTextPiece(",", JsonTokenType.Punctuation)
+    }
+
+    return pieces.joinToString(separator = "") { piece -> piece.text }
+}
+
+private fun buildClosingLineTextPieces(
+    node: JsonTreeNode,
+    isLast: Boolean,
+): List<JsonTextPiece> {
+    val pieces = mutableListOf<JsonTextPiece>()
+
+    when (node.element) {
+        is JsonObject -> pieces += JsonTextPiece("}", JsonTokenType.Punctuation)
+        is JsonArray -> pieces += JsonTextPiece("]", JsonTokenType.Punctuation)
+        is JsonPrimitive -> return emptyList()
+    }
+    if (!isLast) {
+        pieces += JsonTextPiece(",", JsonTokenType.Punctuation)
+    }
+    return pieces
+}
+
+private fun appendNodePrefix(
+    pieces: MutableList<JsonTextPiece>,
+    node: JsonTreeNode,
+) {
+    node.key?.let { key ->
+        pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
+        pieces += JsonTextPiece(escapeJsonString(key), JsonTokenType.Key)
+        pieces += JsonTextPiece("\": ", JsonTokenType.Punctuation)
+    }
+}
+
+private fun appendPrimitiveValuePieces(
+    pieces: MutableList<JsonTextPiece>,
+    value: JsonPrimitive,
+) {
+    when {
+        value.isString -> {
+            pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
+            pieces += JsonTextPiece(escapeJsonString(value.content), JsonTokenType.StringValue)
+            pieces += JsonTextPiece("\"", JsonTokenType.Punctuation)
+        }
+
+        value.content == "null" -> {
+            pieces += JsonTextPiece("null", JsonTokenType.NullValue)
+        }
+
+        value.content == "true" || value.content == "false" -> {
+            pieces += JsonTextPiece(value.content, JsonTokenType.BooleanValue)
+        }
+
+        value.content.toDoubleOrNull() != null -> {
+            pieces += JsonTextPiece(value.content, JsonTokenType.NumberValue)
+        }
+
+        else -> {
+            pieces += JsonTextPiece(value.content, JsonTokenType.Summary)
+        }
+    }
+}
+
+private fun shouldAppendCommaToOpeningLine(
+    element: JsonElement,
+    isLast: Boolean,
+    expanded: Boolean,
+): Boolean {
+    if (isLast) {
+        return false
+    }
+    return when (element) {
+        is JsonPrimitive -> true
+        is JsonObject -> element.isEmpty() || !expanded
+        is JsonArray -> element.isEmpty() || !expanded
+    }
 }
 
 private fun buildAnnotatedNodeText(

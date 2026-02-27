@@ -73,6 +73,8 @@
     <string name="sessions_json_regex_label">Regex</string>
     <string name="sessions_json_action_find">Find</string>
     <string name="sessions_json_action_next">Next</string>
+    <string name="sessions_json_action_copy_node">Copy JSON element</string>
+    <string name="sessions_json_action_copy_all">Copy full JSON body</string>
     <string name="sessions_json_invalid_regex_pattern">Invalid regex pattern</string>
     <string name="sessions_json_summary_keys">keys</string>
     <string name="sessions_json_summary_items">items</string>
